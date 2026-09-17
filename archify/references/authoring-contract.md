@@ -114,6 +114,15 @@ in the generated viewer.
 
 ### Spacing and labels
 
+In showcase Architecture, an unpinned connection label keeps its default position
+when clear. If it collides, the renderer tries a bounded set of nearby positions
+along the existing route, avoiding nodes, boundary titles, other labels and
+other routes within the resolved canvas. Explicit `labelAt`, `labelDx`, `labelDy`
+or `labelSegment` (including zero) disables this fallback. Routes and topology
+stay unchanged; if no nearby position is clear, validation reports the original
+collision. Inspect resolved labels with `--layout-json` before adding controls.
+Standard placement retains its existing behavior.
+
 Spacing recommendations mean clear gap between boxes, not center distance. A 200px center distance between 165px-wide nodes leaves only 35px of clear gap.
 
 For a relationship label, require:
