@@ -118,7 +118,6 @@ try {
 
   requireAbsent('scripts/check-update.mjs');
   requireAbsent('scripts/update-contract.mjs');
-  requireAbsent('skill-updates');
 
   const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
   const skillReferences = [...skill.matchAll(

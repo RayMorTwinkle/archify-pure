@@ -12,11 +12,14 @@ Archify 要求 Node.js 18 或更高版本。开始编图前先运行 doctor：
 node bin/archify.mjs doctor
 ```
 
-如果通过兼容 npm 的 Skill 工具安装，可以执行：
+这个分支从本地检出目录安装——把 `archify/` 复制到你的 Agent 加载 Skills 的目录：
 
 ```bash
-npx skills add tt-a1i/archify -g
+cp -R archify ~/.claude/skills/archify      # Claude Code
+cp -R archify ~/.agents/skills/archify      # Codex CLI
 ```
+
+整个过程不涉及 registry 下载、账号，也不会探测版本。
 
 ## 2. 选择图表类型
 

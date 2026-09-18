@@ -1,5 +1,10 @@
 # Artifact → Install v2 measurement contract
 
+> Scope note (archify-pure): the journey below describes the upstream hosted site.
+> This fork removed `gallery.html` and `start.html`, so the typed-recipe entry point
+> and its coarse interaction steps are no longer reachable here. The record is kept
+> as the measurement history for the generated-artifact journey.
+
 Artifact → Install v2 is a bounded change to the existing journey. Proof Lab cards link to `start.html?type=<type>&source=gallery`, and the Start page selects the matching typed recipe and can copy the selected agent's install command plus the bounded prompt in one action. Generated artifacts no longer emit the former footer link; `source=artifact` remains accepted only for compatibility with already-shared artifact URLs.
 
 The page records only coarse interaction steps:

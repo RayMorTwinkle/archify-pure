@@ -121,5 +121,5 @@ body:
     attributes:
       label: Permission to feature
       options:
-        - label: I allow Archify maintainers to reproduce and feature this submission in the repository, documentation, gallery, and project website under the repository license, with attribution to my GitHub account.
+        - label: I allow Archify maintainers to reproduce and feature this submission in the repository, documentation, and gallery under the repository license, with attribution to my GitHub account.
           required: true

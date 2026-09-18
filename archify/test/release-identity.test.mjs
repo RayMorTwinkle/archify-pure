@@ -289,6 +289,28 @@ test('roadmap current identity follows the package release state', () => {
   }
 });
 
+test('a development build cannot describe the newest stable minor as shipped', () => {
+  for (const offending of [
+    'Archify 2.12 includes the new reader layout.',
+    'Archify 2.12 已覆盖新的 reader layout。',
+  ]) {
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-release-identity-'));
+    try {
+      writeValidDevelopmentFixture(fixture, {
+        'README.md': `Current development version: \`v2.13.0-dev.0\`\n\n${offending}\n`,
+        'README_EN.md': `Current development version: \`v2.13.0-dev.0\`\n\n${offending}\n`,
+        'README_ZH.md': `当前开发版本：\`v2.13.0-dev.0\`\n\n${offending}\n`,
+      });
+
+      const result = runCheck(fixture);
+      assert.notEqual(result.status, 0, offending);
+      assert.match(result.stderr, /README capability summary must describe v2\.13\.0-dev\.0 as development, not published 2\.12\.0/);
+    } finally {
+      fs.rmSync(fixture, { recursive: true, force: true });
+    }
+  }
+});
+
 test('the release gate never reaches for a remote update manifest', () => {
   const source = fs.readFileSync(checker, 'utf8');
   assert.doesNotMatch(source, /updateManifestUrl|stable\.json|update-contract|fetch\(/);

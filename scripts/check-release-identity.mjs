@@ -35,7 +35,7 @@ function readJson(relativePath) {
   }
 }
 
-export function parseSemver(value) {
+function parseSemver(value) {
   if (typeof value !== 'string' || value.length > 128) {
     throw new Error(`invalid SemVer: ${JSON.stringify(value)}`);
   }
@@ -77,7 +77,7 @@ function comparePrerelease(left, right) {
   return 0;
 }
 
-export function compareSemver(leftValue, rightValue) {
+function compareSemver(leftValue, rightValue) {
   const left = parseSemver(leftValue);
   const right = parseSemver(rightValue);
   for (let index = 0; index < left.core.length; index += 1) {
@@ -87,7 +87,7 @@ export function compareSemver(leftValue, rightValue) {
   return comparePrerelease(left.prerelease, right.prerelease);
 }
 
-export function isStableCoreVersion(value) {
+function isStableCoreVersion(value) {
   try {
     const parsed = parseSemver(value);
     return parsed.prerelease === null && parsed.build === null;
@@ -201,6 +201,14 @@ if (hasSupportedVersion) {
   checkReadme('README_EN.md', englishMirror, version, 'en', isDevelopment);
   checkReadme('README_ZH.md', chinese, version, 'zh', isDevelopment);
   if (english !== englishMirror) fail('README_EN.md must remain byte-identical to README.md.');
+
+  if (newestStableLabel && isDevelopment) {
+    const stableMinor = newestStableLabel.split('.').slice(0, 2).join('\\.');
+    if (new RegExp(`Archify ${stableMinor} includes\\b`).test(english)
+      || new RegExp(`Archify ${stableMinor} 已覆盖`).test(chinese)) {
+      fail(`README capability summary must describe v${version} as development, not published ${newestStableLabel}.`);
+    }
+  }
 
   checkRoadmap('ROADMAP.md', read('ROADMAP.md'), version, isDevelopment);
 

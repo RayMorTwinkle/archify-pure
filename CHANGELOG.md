@@ -6,13 +6,19 @@ All notable changes are documented here. Format loosely follows [Keep a Changelo
 
 > Development identity: `v2.17.0-dev.1`. Not a stable release.
 
+### Removed
+- **archify-pure: every outbound request.** This fork is local-only. Removed the packaged update checker (`scripts/check-update.mjs`, `scripts/update-contract.mjs`), the `docs/skill-updates/archify/stable.json` manifest it fetched, and the `SKILL.md` `## Update awareness` step that invoked it after each generated diagram. The Skill now issues no network request, so `ARCHIFY_UPDATE_CHECK_DISABLED` is gone with it.
+- **Hosted documentation site.** Deleted the GitHub Pages landing, scenario guide, Proof Lab page, and agent switcher with their templates, builders, star-history workflow, and publisher, along with their Google Fonts, Trendshift, shields.io, and `raw.githubusercontent.com` requests. `docs/gallery/` and `docs/cases/` remain as checked-in local fixtures, now covered by a deterministic-build drift test in place of the generated-page tests.
+- **Sponsorship placements.** Removed the Sponsors sections and `docs/assets/sponsors/` from all three READMEs, together with the referral (`utm_source`) links and the test that required a sponsor block to stay.
+- **DeepSeek Harness integration.** Deleted `integrations/deepseek-harness` and its workflow: it packed a pinned upstream commit and would have restored the removed update checker.
+- **Remote install paths.** The READMEs and both authoring cookbooks now install from the local checkout or `archify.zip`; the upstream registry commands are gone. Rebuilt `archify.zip` without the updater (77 files).
+
 ### Fixed
 - **Architecture Delta baseline arrowheads (#433).** Removed and rerouted baseline relationships retain their marker definitions in the composed Delta SVG, preserving their authored direction alongside current relationships.
 - **Compare rollback recovery (#438).** If restoring a previous output fails, compare preserves its recovery directory and reports backup-to-target paths instead of deleting the remaining backups during cleanup.
 - **固定提交的来源校验 (#420)。** 校验忽略本地 Git replacement refs，始终读取指定提交的原始对象，避免替换后的文件或行范围造成误接受或误拒绝；保留原有来源链接、诊断与用户 Git 配置。
 - **导出的独立 SVG 声明 UTF-8 编码。** 架构图「下载 SVG」和架构对比（compare）导出的 SVG 文档现在以 `<?xml version="1.0" encoding="UTF-8"?>` 声明开头；缺少声明时，部分消费方不按 XML 规范默认 UTF-8 而猜测编码，导致中文等非 ASCII 文本乱码。
 - **Compare 输入快照一致性 (#400)。** 原始输入校验使用首次读取的字节快照，使其与回执哈希和差异计算保持一致；读取后原文件发生变化不会影响本次比较，非法原始字段仍会被拒绝。
-- **DSH plugin refresh.** Adapter 0.2.0 pins the current Archify development snapshot, includes the newer runtime and CLI fixes, and targets DSH 0.1.2-rc.1. Release metadata replaces the frozen 0.1.0 packaging source; the tarball uses the canonical clean-Skill stager and documents independent plugin upgrades.
 - **Machine-readable CLI argument failures (#330).** `validate --json` and `deliver --json` now keep invalid or missing option values, unknown options and diagram types, unsupported option combinations, and usage errors inside one versioned failure receipt on stdout. These failures use the `arguments` stage, stable diagnostic codes, and exit status 2, while human-mode stderr behavior remains unchanged.
 - **Complete artifact-check receipts (#311).** The checker now lets stdout drain before exiting, so large JSON receipts remain complete through pipes. Validation, delivery, and architecture comparison retain their original success/failure status without truncated-JSON errors.
 - **CLI output file types (#124).** Render, deliver, preview, and compare reject non-HTML artifact targets and compare rejects non-JSON receipt targets, including through symbolic links. Explicit absolute and parent-directory outputs remain supported; internal validation and inspection continue to work.

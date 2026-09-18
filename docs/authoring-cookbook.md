@@ -12,11 +12,14 @@ Archify requires Node.js 18 or later. Run the doctor command before authoring a 
 node bin/archify.mjs doctor
 ```
 
-If you are installing from npm-compatible skill tooling, the global install is:
+This fork installs from the local checkout — copy the `archify/` directory into your agent's Skills directory:
 
 ```bash
-npx skills add tt-a1i/archify -g
+cp -R archify ~/.claude/skills/archify      # Claude Code
+cp -R archify ~/.agents/skills/archify      # Codex CLI
 ```
+
+No registry fetch, account, or version probe is involved.
 
 ## 2. Choose a diagram type
 

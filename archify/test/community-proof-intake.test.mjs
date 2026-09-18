@@ -32,7 +32,7 @@ test('showcase intake requires reproducible proof, redaction, and explicit publi
   }
   assert.match(template, /access tokens/i);
   assert.match(template, /personal or customer data/i);
-  assert.match(template, /repository, documentation, gallery, and project website/i);
+  assert.match(template, /repository, documentation, and gallery/i);
   assert.match(template, /required:\s*true/g);
 
   assert.match(
