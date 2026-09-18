@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { pathsAlias } from '../renderers/shared/output-path.mjs';
-import { sidecarPaths } from './visual-check.mjs';
+import { browserCheckSidecarPaths } from './visual-check.mjs';
 
-export const FINALIZE_STAGES = Object.freeze(['validate', 'deliver', 'check', 'visual-check']);
+export const FINALIZE_STAGES = Object.freeze(['validate', 'deliver', 'check', 'browser-check']);
 
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
@@ -71,17 +71,13 @@ function sidecarFile(directory, value) {
   return path.resolve(directory, value);
 }
 
-function visualEvidence(receipt, artifactPath) {
+function browserEvidence(receipt, artifactPath) {
   if (!receipt) return {};
   const directory = receipt.sidecars?.directory
     ? path.resolve(receipt.sidecars.directory)
     : path.dirname(path.resolve(artifactPath));
   return {
-    ...(receipt.sidecars?.receipt ? { visualCheckReceipt: sidecarFile(directory, receipt.sidecars.receipt) } : {}),
-    ...(receipt.captures?.contactSheet ? { contactSheet: sidecarFile(directory, receipt.captures.contactSheet) } : {}),
-    ...(receipt.captures?.contactSheetImage ? {
-      contactSheetImage: sidecarFile(directory, receipt.captures.contactSheetImage),
-    } : {}),
+    ...(receipt.sidecars?.receipt ? { browserCheckReceipt: sidecarFile(directory, receipt.sidecars.receipt) } : {}),
   };
 }
 
@@ -100,7 +96,7 @@ function stageArguments({ stage, type, input, output, quality, repoRoot, outDir 
   if (stage === 'deliver') return ['deliver', type, input, output, ...qualityArgs, ...repoArgs, '--json'];
   if (stage === 'check') return ['check', output, '--require-provenance'];
   return [
-    'visual-check', output, '--json', '--require-provenance',
+    'browser-check', output, '--json', '--require-provenance',
     ...(outDir ? ['--out-dir', outDir] : []),
   ];
 }
@@ -114,17 +110,14 @@ export function defaultFinalizeReceiptPath(output, { outDir } = {}) {
 function reservedFinalizePaths({ input, output, outDir }) {
   const artifact = path.resolve(output);
   const delivery = artifact.replace(/\.html?$/i, '.delivery.json');
-  const visual = sidecarPaths(artifact, { outDir });
+  const browser = browserCheckSidecarPaths(artifact, { outDir });
   return [
     path.resolve(input),
     artifact,
     delivery,
     delivery.replace(/\.json$/i, '-pending.json'),
     delivery.replace(/\.json$/i, '-lock.json'),
-    visual.receipt,
-    visual.contactSheet,
-    visual.contactSheetImage,
-    ...visual.screenshots.map((entry) => entry.path),
+    browser.receipt,
   ];
 }
 
@@ -148,7 +141,7 @@ export function compactFinalizeReceipt(receipt) {
       message: entry.message,
     })),
     evidence: receipt.evidence,
-    visualReview: 'pending',
+    visualReview: receipt.visualReview || 'not-requested',
     durationMs: receipt.durationMs,
   };
 }
@@ -195,7 +188,7 @@ export function runFinalize({
     stages: {},
     diagnostics: [],
     evidence: { receipt: resolvedReceipt },
-    visualReview: 'pending',
+    visualReview: 'not-requested',
   };
   writeJsonAtomic(resolvedReceipt, receipt);
 
@@ -231,10 +224,10 @@ export function runFinalize({
       path: resolvedOutput,
       ...stageReceipt.artifact,
     };
-    if (stage === 'visual-check') {
+    if (stage === 'browser-check') {
       receipt.evidence = {
         receipt: resolvedReceipt,
-        ...visualEvidence(stageReceipt, resolvedOutput),
+        ...browserEvidence(stageReceipt, resolvedOutput),
       };
     }
 

@@ -318,6 +318,30 @@ try {
     throw new Error('packaged visual-check did not return the expected Chrome-unavailable receipt');
   }
 
+  const browserSkipped = JSON.parse(runExpectFailure([
+    'browser-check', delivered.output, '--json',
+  ], {
+    env: { ...process.env, ARCHIFY_CHROME: path.join(scratch, 'missing-chrome') },
+  }));
+  if (browserSkipped.status !== 'skipped' || browserSkipped.visualReview !== 'not-requested'
+    || browserSkipped.themeStates?.status !== 'skipped'
+    || browserSkipped.captures?.status !== 'not-requested'
+    || browserSkipped.chrome?.status !== 'unavailable') {
+    throw new Error('packaged browser-check did not return the expected capture-free Chrome-unavailable receipt');
+  }
+
+  const finalizeSkipped = JSON.parse(runExpectFailure([
+    'finalize', 'workflow', path.join(skillRoot, 'examples', fixtures[1][1]),
+    path.join(scratch, 'workflow-finalized.html'), '--quality', 'showcase', '--json',
+  ], {
+    env: { ...process.env, ARCHIFY_CHROME: path.join(scratch, 'missing-chrome') },
+  }));
+  if (finalizeSkipped.status !== 'skipped' || finalizeSkipped.failedStage !== 'browser-check'
+    || finalizeSkipped.visualReview !== 'not-requested'
+    || finalizeSkipped.gates?.['browser-check'] !== 'skipped') {
+    throw new Error('packaged finalize did not use browser-check as its capture-free fourth gate');
+  }
+
   const emptyPath = path.join(scratch, 'empty-path');
   fs.mkdirSync(emptyPath);
   const openReceipt = JSON.parse(run([

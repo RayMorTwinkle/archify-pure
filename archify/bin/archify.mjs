@@ -666,6 +666,7 @@ function usage() {
   archify migrate workflow <old.json> <new.json> --to-schema 2 [--json] [--repo-root path]
   archify inspect <type> <input.json>
   archify check <output.html> [--require-provenance]
+  archify browser-check <output.html> [--json] [--require-provenance] [--out-dir <dir>]
   archify visual-check <output.html> [--json] [--require-provenance] [--out-dir <dir>]
   archify guide [scenario or question] [--json] [--lang en|zh]
   archify brands [name, alias, domain, or category] [--json]
@@ -2359,10 +2360,10 @@ function provenanceFailureReceipt({ command, artifactPath, provenance }) {
     schemaVersion: 1,
     ok: false,
     command,
-    ...(command === 'visual-check' ? {
+    ...(['visual-check', 'browser-check'].includes(command) ? {
       evidenceKind: 'automated-browser',
       status: 'fail',
-      visualReview: 'pending',
+      visualReview: command === 'visual-check' ? 'pending' : 'not-requested',
     } : {}),
     provenance: provenance.status,
     ...(provenance.receiptId ? { deliveryReceiptId: provenance.receiptId } : {}),
@@ -2416,33 +2417,37 @@ function commandCheck(args) {
   if (result.status !== 0) process.exitCode = result.status ?? 1;
 }
 
-async function commandVisualCheck(rawArgs) {
+async function commandBrowserEvidence(rawArgs, { command, capture }) {
   const { rest: args, outDir } = extractOutDirArgs(rawArgs);
   const json = args.includes('--json');
   const requireProvenance = args.includes('--require-provenance');
   const knownOptions = new Set(['--json', '--require-provenance']);
   const unknown = args.filter((arg) => arg.startsWith('--') && !knownOptions.has(arg));
-  if (unknown.length) fail(`Unknown visual-check option "${unknown[0]}".`, 1);
+  if (unknown.length) fail(`Unknown ${command} option "${unknown[0]}".`, 1);
   const positional = args.filter((arg) => !knownOptions.has(arg));
   if (positional.length !== 1) fail(usage(), 1);
 
   const artifactPath = path.resolve(positional[0]);
   const provenance = inspectArtifactDeliveryProvenance(artifactPath, requireProvenance);
-  let runVisualCheck;
-  let persistVisualCheckFailure;
+  let runEvidence;
+  let persistFailure;
   try {
-    ({ runVisualCheck, persistVisualCheckFailure } = await import('./visual-check.mjs'));
+    const evidence = await import('./visual-check.mjs');
+    runEvidence = command === 'browser-check' ? evidence.runBrowserCheck : evidence.runVisualCheck;
+    persistFailure = command === 'browser-check'
+      ? evidence.persistBrowserCheckFailure
+      : evidence.persistVisualCheckFailure;
   } catch (error) {
-    fail(`Could not load visual-check: ${error.message}`, 1);
+    fail(`Could not load ${command}: ${error.message}`, 1);
   }
   if (provenance && !provenance.ok) {
-    const receipt = persistVisualCheckFailure(artifactPath,
-      provenanceFailureReceipt({ command: 'visual-check', artifactPath, provenance }),
+    const receipt = persistFailure(artifactPath,
+      provenanceFailureReceipt({ command, artifactPath, provenance }),
       { outDir });
     if (json) console.log(JSON.stringify(receipt, null, 2));
     else {
       console.error(formatDiagnostics(`automated browser evidence failed: ${receipt.error}`, receipt.diagnostics));
-      console.error('perceptual visual review pending');
+      console.error(capture ? 'perceptual visual review pending' : 'perceptual visual review not requested');
     }
     process.exitCode = 1;
     return;
@@ -2450,7 +2455,7 @@ async function commandVisualCheck(rawArgs) {
 
   let result;
   try {
-    result = await runVisualCheck({
+    result = await runEvidence({
       artifactPath: positional[0],
       outDir,
       ...(provenance ? { deliveryProvenance: provenance } : {}),
@@ -2465,13 +2470,13 @@ async function commandVisualCheck(rawArgs) {
       },
     });
   } catch (error) {
-    const failure = persistVisualCheckFailure(artifactPath, {
+    const failure = persistFailure(artifactPath, {
         schemaVersion: 1,
         ok: false,
-        command: 'visual-check',
+        command,
         evidenceKind: 'automated-browser',
         status: 'fail',
-        visualReview: 'pending',
+        visualReview: capture ? 'pending' : 'not-requested',
         ...(provenance ? {
           provenance: provenance.status,
           ...(provenance.receiptId ? { deliveryReceiptId: provenance.receiptId } : {}),
@@ -2479,8 +2484,8 @@ async function commandVisualCheck(rawArgs) {
         artifact: { path: path.resolve(positional[0]) },
         error: error.message,
         diagnostics: [diagnostic({
-          code: 'viewer/visual-check-input',
-          message: 'visual-check could not read a valid HTML input or prepare its evidence files.',
+          code: `viewer/${command}-input`,
+          message: `${command} could not read a valid HTML input or prepare its evidence files.`,
           subject: { artifact: path.resolve(positional[0]) },
           evidence: { reason: error.message, ...(error.code ? { systemCode: error.code } : {}) },
           supportedFixes: ['provide an existing readable .html artifact and a writable directory for evidence files'],
@@ -2490,7 +2495,7 @@ async function commandVisualCheck(rawArgs) {
       console.log(JSON.stringify(failure, null, 2));
     } else {
       console.error(formatDiagnostics(`automated browser evidence failed: ${failure.error}`, failure.diagnostics));
-      console.error('perceptual visual review pending');
+      console.error(capture ? 'perceptual visual review pending' : 'perceptual visual review not requested');
     }
     process.exitCode = 1;
     return;
@@ -2501,7 +2506,7 @@ async function commandVisualCheck(rawArgs) {
   } else {
     const sidecarDirectory = outDir || path.dirname(result.receipt.artifact.path);
     console.log(`automated browser evidence ${result.receipt.status}: ${result.receipt.artifact.path}`);
-    console.log(`visual-check containment ${result.receipt.containment.status}; captures ${result.receipt.captures.status}; perceptual visual review pending`);
+    console.log(`${command} containment ${result.receipt.containment.status}; captures ${result.receipt.captures.status}; perceptual visual review ${result.receipt.visualReview}`);
     console.log(`receipt ${path.join(sidecarDirectory, result.receipt.sidecars.receipt)}`);
     if (result.receipt.captures.contactSheet) {
       console.log(`contact sheet ${path.join(sidecarDirectory, result.receipt.captures.contactSheet)}`);
@@ -2512,6 +2517,14 @@ async function commandVisualCheck(rawArgs) {
     if (result.receipt.error) console.error(result.receipt.error);
   }
   process.exitCode = result.exitCode;
+}
+
+async function commandVisualCheck(rawArgs) {
+  return commandBrowserEvidence(rawArgs, { command: 'visual-check', capture: true });
+}
+
+async function commandBrowserCheck(rawArgs) {
+  return commandBrowserEvidence(rawArgs, { command: 'browser-check', capture: false });
 }
 
 function extractFinalizeReceiptArgs(args) {
@@ -2605,9 +2618,9 @@ async function commandFinalize(rawArgs) {
       quality: qualityArgs.quality || 'showcase',
       specification: { path: path.resolve(input) },
       artifact: { path: path.resolve(output) },
-      gates: Object.fromEntries(['validate', 'deliver', 'check', 'visual-check'].map((stage) => [stage, 'not-run'])),
+      gates: Object.fromEntries(['validate', 'deliver', 'check', 'browser-check'].map((stage) => [stage, 'not-run'])),
       diagnostics: [{ code: 'finalize/runtime', severity: 'error', message: error.message }],
-      visualReview: 'pending',
+      visualReview: 'not-requested',
     };
     if (json) console.log(JSON.stringify(failure));
     else console.error(formatDiagnostics('finalize could not start', failure.diagnostics));
@@ -2621,10 +2634,7 @@ async function commandFinalize(rawArgs) {
     console.log(`finalize ${result.summary.status}: ${result.summary.artifact.path}`);
     console.log(`gates ${Object.entries(result.summary.gates).map(([stage, status]) => `${stage}:${status}`).join(' ')}`);
     console.log(`receipt ${result.summary.evidence.receipt}`);
-    if (result.summary.evidence.contactSheetImage) {
-      console.log(`review image ${result.summary.evidence.contactSheetImage}`);
-    }
-    console.log('perceptual visual review pending');
+    console.log(`perceptual visual review ${result.summary.visualReview}`);
   }
   process.exitCode = result.exitCode;
 }
@@ -3426,6 +3436,9 @@ try {
       break;
     case 'visual-check':
       await commandVisualCheck(args);
+      break;
+    case 'browser-check':
+      await commandBrowserCheck(args);
       break;
     case 'guide':
       await commandGuide(args);

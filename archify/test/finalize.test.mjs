@@ -38,21 +38,17 @@ test('finalize runs the four gates in order and keeps full stage receipts out of
     }
     if (stage === 'check') return result({ schemaVersion: 1, ok: true, artifact: { sha256: 'check-sha', bytes: 46 }, provenance: 'current' });
     fs.mkdirSync(outDir, { recursive: true });
-    for (const file of ['diagram.visual-check.json', 'diagram.visual-check.html', 'diagram.visual-check.contact.png']) {
-      fs.writeFileSync(path.join(outDir, file), file);
-    }
+    fs.writeFileSync(path.join(outDir, 'diagram.browser-check.json'), 'browser evidence');
     return result({
       schemaVersion: 1,
       ok: true,
-      command: 'visual-check',
+      command: 'browser-check',
       status: 'pass',
+      visualReview: 'not-requested',
       diagnostics: [],
-      sidecars: { directory: outDir, receipt: 'diagram.visual-check.json' },
-      captures: {
-        contactSheet: 'diagram.visual-check.html',
-        contactSheetImage: 'diagram.visual-check.contact.png',
-        screenshots: [{ file: 'large-stage-array-is-kept-only-in-full-receipt.png' }],
-      },
+      sidecars: { directory: outDir, receipt: 'diagram.browser-check.json' },
+      containment: { viewports: [{ large: 'large-stage-array-is-kept-only-in-full-receipt' }] },
+      captures: { status: 'not-requested', screenshots: [], contactSheet: null, contactSheetImage: null },
     });
   };
 
@@ -67,14 +63,15 @@ test('finalize runs the four gates in order and keeps full stage receipts out of
 
   assert.equal(finalized.exitCode, 0);
   assert.equal(finalized.receipt.ok, true);
-  assert.deepEqual(calls.map(({ stage }) => stage), ['validate', 'deliver', 'check', 'visual-check']);
+  assert.deepEqual(calls.map(({ stage }) => stage), ['validate', 'deliver', 'check', 'browser-check']);
   assert.deepEqual(finalized.summary.gates, {
-    validate: 'pass', deliver: 'pass', check: 'pass', 'visual-check': 'pass',
+    validate: 'pass', deliver: 'pass', check: 'pass', 'browser-check': 'pass',
   });
-  assert.equal(finalized.summary.evidence.contactSheetImage, path.join(outDir, 'diagram.visual-check.contact.png'));
+  assert.equal(finalized.summary.evidence.browserCheckReceipt, path.join(outDir, 'diagram.browser-check.json'));
+  assert.equal(finalized.summary.visualReview, 'not-requested');
   assert.equal('stages' in finalized.summary, false);
   assert.equal(JSON.stringify(finalized.summary).includes('large-stage-array'), false);
-  assert.equal(finalized.receipt.stages['visual-check'].receipt.captures.screenshots.length, 1);
+  assert.equal(finalized.receipt.stages['browser-check'].receipt.containment.viewports.length, 1);
 
   const receiptPath = defaultFinalizeReceiptPath(output, { outDir });
   assert.equal(finalized.summary.evidence.receipt, receiptPath);
@@ -116,7 +113,7 @@ test('finalize stops at the failed gate and persists actionable failure evidence
   assert.deepEqual(calls, ['validate', 'deliver']);
   assert.equal(finalized.receipt.failedStage, 'deliver');
   assert.equal(finalized.summary.gates.check, 'not-run');
-  assert.equal(finalized.summary.gates['visual-check'], 'not-run');
+  assert.equal(finalized.summary.gates['browser-check'], 'not-run');
   assert.deepEqual(finalized.summary.diagnostics, [{
     code: 'composition/route-crossing',
     severity: 'error',
@@ -134,22 +131,23 @@ test('compact finalize receipts preserve the acceptance boundary', () => {
     quality: 'showcase',
     specification: { path: '/tmp/spec.json', sha256: 'spec' },
     artifact: { path: '/tmp/artifact.html', sha256: 'artifact' },
-    stages: Object.fromEntries(['validate', 'deliver', 'check', 'visual-check'].map((stage) => [stage, { status: 'pass' }])),
+    stages: Object.fromEntries(['validate', 'deliver', 'check', 'browser-check'].map((stage) => [stage, { status: 'pass' }])),
     diagnostics: [],
-    evidence: { receipt: '/tmp/artifact.finalize.json', contactSheetImage: '/tmp/artifact.visual-check.contact.png' },
+    evidence: { receipt: '/tmp/artifact.finalize.json', browserCheckReceipt: '/tmp/artifact.browser-check.json' },
+    visualReview: 'not-requested',
     durationMs: 4200,
   });
   assert.equal(compact.ok, true);
-  assert.equal(compact.visualReview, 'pending');
-  assert.equal(compact.gates['visual-check'], 'pass');
-  assert.equal(compact.evidence.contactSheetImage.endsWith('.png'), true);
+  assert.equal(compact.visualReview, 'not-requested');
+  assert.equal(compact.gates['browser-check'], 'pass');
+  assert.equal(compact.evidence.browserCheckReceipt.endsWith('.json'), true);
 });
 
 test('finalize refuses a receipt path that aliases a gate sidecar', t => {
   const directory = workspace(t);
   const input = path.join(directory, 'diagram.json');
   const output = path.join(directory, 'diagram.html');
-  const visualReceipt = path.join(directory, 'diagram.visual-check.json');
+  const visualReceipt = path.join(directory, 'diagram.browser-check.json');
   fs.writeFileSync(input, '{}');
   fs.writeFileSync(visualReceipt, 'preserve me');
   let invoked = false;

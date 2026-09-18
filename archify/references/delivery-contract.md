@@ -56,10 +56,11 @@ After ownership is established, `deliver` creates the journal before rendering
 and keeps it through the recoverable HTML/sidecar pair commit. It removes the
 journal only after that commit completes. A validation, render, or pair-commit
 failure, or a process interruption, may therefore leave a journal. The journal
-is a safety barrier: `check` and `visual-check` fail closed when any directory
-entry exists at the journal or lock path, including an unreadable file,
-symlink, or dangling symlink. Run deliveries targeting the same output path
-serially; one attempt must finish or be recovered before another begins.
+is a safety barrier: `check`, `browser-check`, and `visual-check` fail closed
+when any directory entry exists at the journal or lock path, including an
+unreadable file, symlink, or dangling symlink. Run deliveries targeting the
+same output path serially; one attempt must finish or be recovered before
+another begins.
 
 A successful sidecar has `schemaVersion: 1`, `status: "current"`,
 `command: "deliver"`, a unique `receiptId`, the diagram `type`, an absolute
@@ -92,7 +93,7 @@ artifact:
 
 ```bash
 node bin/archify.mjs check <output.html> --require-provenance
-node bin/archify.mjs visual-check <output.html> --json --require-provenance
+node bin/archify.mjs browser-check <output.html> --json --require-provenance
 ```
 
 Use `validate` after every candidate edit. CLI HTML output paths must end in `.html`, including after symbolic-link resolution.
@@ -118,15 +119,15 @@ node bin/archify.mjs finalize <type> <candidate.json> <output.html> --quality sh
 ```
 
 `finalize` invokes showcase `validate`, verified `deliver`, strict
-`check --require-provenance`, and `visual-check --require-provenance` in that order. It
-stops at the first failed or skipped stage and preserves that stage's full
-receipt. Its stdout is one compact JSON object with gate statuses, diagnostic
-codes, artifact identity, and evidence paths. Complete stage receipts and
-timings are written atomically to `<output-stem>.finalize.json`, or beside the
-visual evidence when `--out-dir` is supplied. `--receipt <path.json>` overrides
-that aggregate sidecar path. The compact receipt deliberately keeps
-`visualReview: "pending"`; one command does not merge the independent
-acceptance claims below.
+`check --require-provenance`, and `browser-check --require-provenance` in that
+order. It stops at the first failed or skipped stage and preserves that stage's
+full receipt. Its stdout is one compact JSON object with gate statuses,
+diagnostic codes, artifact identity, and evidence paths. Complete stage
+receipts and timings are written atomically to
+`<output-stem>.finalize.json`, or beside the browser receipt when `--out-dir`
+is supplied. `--receipt <path.json>` overrides that aggregate sidecar path.
+The compact receipt reports `visualReview: "not-requested"`; ordinary
+acceptance does not create images or require a perceptual reviewer.
 
 A passing finalizer receipt is sufficient evidence for all four gates. Merely
 naming the gates or requiring each one to pass does not require replaying their
@@ -169,19 +170,20 @@ lock keeps strict checkers fail-closed. Only after pair commit, journal
 finalization, and lock release all succeed may `deliver` exit zero, print its
 success receipt, or run `--open`.
 
-Run strict `check` after `deliver` exits zero. Run `visual-check` only after that
-strict check exits zero. A failed marker, recovery journal, or delivery lock
-makes both commands fail before accepting the preserved HTML; report the
-diagnostics and complete a successful recovery delivery before collecting new
-visual evidence.
+Run strict `check` after `deliver` exits zero. Run `browser-check` or optional
+`visual-check` only after that strict check exits zero. A failed marker,
+recovery journal, or delivery lock makes every checker fail before accepting
+the preserved HTML; report the diagnostics and complete a successful recovery
+delivery before collecting new browser evidence.
 
-The delivery interface exposes three separate claims:
+The delivery interface exposes four separate claims:
 
 1. `deliver` proves deterministic artifact checks and byte identity.
-2. `visual-check` collects automated browser evidence from the exact artifact.
-3. Perceptual visual review records a human or image-capable reviewer's judgment.
+2. `browser-check` collects required automated browser evidence from the exact artifact without capturing images.
+3. `visual-check` optionally adds artifact-bound screenshots and a contact sheet.
+4. Perceptual visual review records a human or image-capable reviewer's judgment.
 
-Passing one claim never implies either of the others. Never claim that the deterministic receipt includes visual review. It does not include browser evidence either.
+Passing one claim never implies the others. Never claim that the deterministic receipt includes browser or perceptual review evidence.
 
 ## Recovering a failed comparison
 
@@ -203,30 +205,24 @@ Successful comparisons and failures before commit retain their normal cleanup.
 
 ## Automated browser evidence
 
-After delivery, inspect the exact trusted HTML without rerendering or modifying
-it:
+`finalize` runs the required browser gate against the exact trusted HTML without
+rerendering or modifying it. For focused diagnosis, the equivalent standalone
+command is:
 
 ```bash
-node bin/archify.mjs visual-check <output.html> --json --require-provenance
+node bin/archify.mjs browser-check <output.html> --json --require-provenance
 ```
 
 The zero-dependency command uses Chrome/Chromium through the DevTools pipe. It
 measures light-theme containment at 1440×900, 1600×1000, 1920×1080, and
-2048×1320, then captures light/dark screenshots at 1440×900 and 2048×1320. It
-writes four viewport PNG sidecars, one relative-path HTML contact sheet, one
-PNG rendering of that full contact sheet, and one JSON receipt beside the
-artifact by default — pass `--out-dir <dir>` to write all of
-them into a separate directory instead (created if missing) when a project
-keeps its testing/evidence artifacts apart from the delivered `.json`/`.html`
-result pair. When that directory differs from the artifact directory, the
-receipt records its absolute path as `sidecars.directory`; sidecar filenames
-resolve there, otherwise beside `artifact.path`. The HTML contact sheet keeps
-its image links relative for portability. The single `.visual-check.contact.png`
-is the default image-reader entry point; inspect individual viewport PNGs only
-when its overview exposes a possible defect. The receipt binds the source artifact SHA-256 and
-byte count, identifies `evidenceKind: "automated-browser"`, records READ plus
-Still runtime state, and always reports `visualReview: "pending"`; automated
-browser evidence cannot claim perceptual review.
+2048×1320, and verifies the endpoint light/dark theme plus READ/Still runtime
+states. A requested theme that resolves to a different theme fails with measured
+evidence. It creates one
+`<output-stem>.browser-check.json` receipt and no screenshots or contact sheet.
+Pass `--out-dir <dir>` to place the receipt in a separate evidence directory.
+The receipt binds the artifact SHA-256 and byte count, identifies
+`evidenceKind: "automated-browser"`, and reports
+`visualReview: "not-requested"`.
 
 Horizontal overflow always fails. Vertical overflow normally fails as well. One
 bounded exception preserves readability for compiler-measured intrinsic-height
@@ -240,25 +236,41 @@ explicit authored viewBoxes, horizontal overflow, unreadable text, clipping, and
 Viewer chrome collisions remain failures. Do not add an internal diagram
 scroller or hide overflow.
 
-`browser_evidence` in the handoff records only the outcome of this automated command:
+`browser_evidence` in the handoff records only the outcome of this automated
+command:
 
-- `passed` maps from exit 0 and receipt `status: "pass"` only after every required measurement and capture completes and passes.
-- `failed` maps from exit 1 and receipt `status: "fail"` when the inspection finds a defect, the command fails, or a runtime/capture error leaves the evidence incomplete.
+- `passed` maps from exit 0 and receipt `status: "pass"` after every required measurement completes and passes.
+- `failed` maps from exit 1 and receipt `status: "fail"` when the inspection finds a defect, the command fails, or a runtime error leaves the evidence incomplete.
 - `skipped` maps only from exit 2 and receipt `status: "skipped"` when Chrome/Chromium is unavailable and the inspection does not run.
 
-Runtime or capture failures leave incomplete evidence and must not be normalized to `skipped`. Failed or skipped capture runs remove stale
-image/contact-sheet sidecars rather than presenting prior evidence as current.
-They do not invalidate an already successful deterministic delivery, and they
-do not turn a perceptual visual review into passed or failed. Retry an
-environmental failure through the supported command in a browser-capable
-execution context when practical. Keep the packaged transport unchanged unless
-the failure reproduces through that seam in a capable environment.
+Runtime failures leave incomplete evidence and must not be normalized to
+`skipped`. They do not invalidate an already successful deterministic delivery.
+Retry an environmental failure in a browser-capable execution context when
+practical. Keep the packaged transport unchanged unless the failure reproduces
+through that seam in a capable environment.
 
-A provenance failure exits before browser inspection. That early exit removes
-stale screenshots and the contact sheet, then persists a failed visual-check
-receipt bound to the attempted artifact. If any stale-evidence cleanup or
-failure-receipt write cannot complete, the diagnostic names that incomplete
-cleanup; do not present remaining sidecars as current evidence.
+A provenance failure exits before browser inspection and persists a failed
+browser-check receipt bound to the attempted artifact. If the failure receipt
+cannot be written, the diagnostic names that incomplete evidence.
+
+## Optional capture evidence
+
+`visual-check` remains backward compatible for a requested or escalated
+perceptual review:
+
+```bash
+node bin/archify.mjs visual-check <output.html> --json --require-provenance
+```
+
+It performs the same automated browser measurements, captures light/dark
+screenshots at 1440×900 and 2048×1320, and writes four viewport PNG sidecars,
+one relative-path HTML contact sheet, one PNG rendering of that contact sheet,
+and one JSON receipt. `--out-dir <dir>` moves all of these sidecars together.
+The single `.visual-check.contact.png` is the image-reader entry point; inspect
+an individual viewport PNG only when the overview exposes a possible defect.
+Its receipt reports `visualReview: "pending"` because captures do not themselves
+make a perceptual judgment. Capture or provenance failure removes stale image
+sidecars before recording failure so prior evidence cannot appear current.
 
 ## Optional opening
 
@@ -283,23 +295,37 @@ The preview runtime ships inside the zero-dependency Skill ZIP and must work wit
 
 Never start it by default. Do not use it for CI, unattended agents, remote sharing, or mobile use. `--no-open` is only for a user who will open the printed local URL or for loop testing. Stop it with Ctrl-C before handoff. Server state, port, source path, diagnostics, error text, and reload tokens must never enter the generated artifact or any export.
 
-## Perceptual delivery gate
+## Optional perceptual review
 
-Automated validation and browser evidence cannot prove visual polish. After deterministic delivery, inspect the actual HTML in a capable browser or render the evidence screenshots with an image reader. Check both themes when changed, the default READ view, line crossings/corridors, label masks, node/card fit, focus/search/passport closure, and export cleanliness.
+The ordinary path ends with the deterministic browser gate and reports
+`visual_review: not_requested`. Escalate to perceptual review when any of these
+conditions applies:
 
-For the default standalone desktop viewer, measure 1440×900, 1600×1000, 1920×1080, and 2048×1320. Require `document.documentElement.scrollWidth <= window.innerWidth` at every checked size. Prefer `scrollHeight <= window.innerHeight`; accept page-level vertical scrolling only through the Reader-declared readable exception defined above. At the largest checked viewport, inspect the rendered composition for a conspicuous empty lower band: the main panel and necessary conclusion cards should use the available height as a balanced whole, not collapse into a shallow strip. For unexpected overflow, repair the authored composition by removing only genuinely redundant content or compacting spacing before shrinking nodes, labels, or the main panel. Do not hide overflow, clip content, introduce an internal diagram scroller, or reduce node/label typography to make the measurement pass. Narrow/mobile containment may retain vertical page scrolling.
+- the user explicitly requests an aesthetic or visual review;
+- a template, renderer, or Viewer change needs visual regression evidence;
+- a novel layout or browser diagnostic leaves low confidence;
+- the run is selected for sampled audit or dogfood.
 
-A manual browser record is supplementary to the automated status. Reproducing the same coverage requires all four exact viewport measurements, both endpoint themes, and an artifact-bound record of the inspected SHA-256 and byte count. It never changes `browser_evidence`: when Chrome/Chromium is unavailable, that status remains `skipped` even when the manual browser record is complete and `visual_review: passed`; an automated `failed` result likewise remains `failed`. An unconstrained browser glance can support perceptual review only.
+For an escalation, run `visual-check` on the current finalized artifact, inspect
+its contact sheet with a capable image reader or human, and check both endpoint
+themes, the default READ view, line crossings/corridors, label masks, node/card
+fit, focus/search/passport closure, and export cleanliness. This review is
+supplementary and never changes `browser_evidence`. An unconstrained browser
+glance can support perceptual review only.
 
-Report exactly one truthful status:
+Report one truthful optional-review status:
 
+- `visual_review: not_requested` — the default successful handoff.
 - `visual_review: passed` — only after inspecting the rendered artifact.
-- `visual_review: skipped (image reader unavailable)` — when no capable visual surface exists.
+- `visual_review: skipped (image reader unavailable)` — a requested or triggered review could not run.
 - `visual_review: failed` — with the concrete visible defect.
 
-Use `correction_rounds: 0`, `correction_rounds: 1`, or `correction_rounds: 2`; never exceed a maximum of two focused correction rounds. Never report `visual_review: passed` without inspecting the artifact.
-
-If visual review changes the candidate, validation and delivery must run again because the prior frozen specification receipt is no longer current.
+For an escalated review, use `correction_rounds: 0`, `correction_rounds: 1`, or
+`correction_rounds: 2`; never exceed two focused correction rounds. When review
+is not requested, use `correction_rounds: 0`. Never report
+`visual_review: passed` without inspecting the artifact. If perceptual review
+changes the candidate, rerun `finalize` because the previous specification and
+artifact receipts are no longer current.
 
 ## Handoff receipt
 
@@ -312,10 +338,14 @@ specification_sha256: <receipt value>
 artifact_sha256: <receipt value>
 validation: 9/9 showcase, 0 errors, 0 warnings
 browser_evidence: passed|failed|skipped
-visual_review: passed|skipped (image reader unavailable)|failed
+visual_review: not_requested|passed|skipped (image reader unavailable)|failed
 correction_rounds: 0|1|2
 ```
 
-Derive `browser_evidence` only from the latest artifact-bound `visual-check` receipt. Record any manual browser work separately with its artifact binding, viewport/theme scope, and observations; never use it or `visual_review` to overwrite the automated status.
+Derive `browser_evidence` only from the latest artifact-bound `browser-check`
+receipt, normally the stage embedded by `finalize`. Record optional capture or
+manual browser work separately with its artifact binding, viewport/theme scope,
+and observations; never use it or `visual_review` to overwrite the automated
+status.
 
 Opening, preview status, Share Cards, and other viewer exports are not validation claims.

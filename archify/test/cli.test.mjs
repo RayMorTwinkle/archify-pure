@@ -128,6 +128,7 @@ test('cli: help lists commands and diagram types', () => {
   assert.match(result.stdout, /archify deliver <type>/);
   assert.match(result.stdout, /archify finalize <type>/);
   assert.match(result.stdout, /archify preview <type>/);
+  assert.match(result.stdout, /archify browser-check <output\.html>/);
   assert.match(result.stdout, /archify visual-check <output\.html>/);
   assert.match(result.stdout, /--open/);
   assert.match(result.stdout, /archify validate <type> <input\.json> .*\[--repo-root path\]/);
@@ -358,6 +359,26 @@ test('cli: visual-check returns a skipped receipt with exit 2 when Chrome is una
   assert.equal(fs.existsSync(out.replace(/\.html$/, '.visual-check.json')), true);
 });
 
+test('cli: browser-check returns deterministic evidence without requesting perceptual review', () => {
+  const out = path.join(tmp, 'browser-check-skipped.html');
+  fs.writeFileSync(out, '<!doctype html><html><body>delivered</body></html>');
+  const missingChrome = path.join(tmp, 'missing-browser-check-chrome');
+  const result = run(['browser-check', out, '--json'], {
+    env: { ...process.env, ARCHIFY_CHROME: missingChrome },
+  });
+
+  assert.equal(result.status, 2, result.stderr);
+  const receipt = JSON.parse(result.stdout);
+  assert.equal(receipt.command, 'browser-check');
+  assert.equal(receipt.status, 'skipped');
+  assert.equal(receipt.evidenceKind, 'automated-browser');
+  assert.equal(receipt.visualReview, 'not-requested');
+  assert.equal(receipt.captures.status, 'not-requested');
+  assert.equal(receipt.chrome.status, 'unavailable');
+  assert.equal(fs.existsSync(out.replace(/\.html$/, '.browser-check.json')), true);
+  assert.equal(fs.existsSync(out.replace(/\.html$/, '.browser-check.contact.png')), false);
+});
+
 test('cli: finalize emits one compact receipt and keeps complete stage evidence in its sidecar', () => {
   const input = path.join(skillRoot, 'examples/web-app.architecture.json');
   const out = path.join(tmp, 'finalize-skipped.html');
@@ -372,15 +393,16 @@ test('cli: finalize emits one compact receipt and keeps complete stage evidence 
   assert.equal(result.stdout.trim().split('\n').length, 1, 'agent stdout stays compact');
   const summary = JSON.parse(result.stdout);
   assert.equal(summary.status, 'skipped');
-  assert.equal(summary.failedStage, 'visual-check');
+  assert.equal(summary.failedStage, 'browser-check');
   assert.deepEqual(summary.gates, {
-    validate: 'pass', deliver: 'pass', check: 'pass', 'visual-check': 'skipped',
+    validate: 'pass', deliver: 'pass', check: 'pass', 'browser-check': 'skipped',
   });
-  assert.equal(summary.visualReview, 'pending');
+  assert.equal(summary.visualReview, 'not-requested');
   assert.equal(summary.evidence.receipt, path.join(outDir, 'finalize-skipped.finalize.json'));
+  assert.equal(summary.evidence.browserCheckReceipt, path.join(outDir, 'finalize-skipped.browser-check.json'));
   const full = JSON.parse(fs.readFileSync(summary.evidence.receipt, 'utf8'));
   assert.equal(full.stages.validate.receipt.checks.length, 9);
-  assert.equal(full.stages['visual-check'].receipt.status, 'skipped');
+  assert.equal(full.stages['browser-check'].receipt.status, 'skipped');
   assert.equal(fs.existsSync(out), true, 'verified delivery remains available when browser evidence is skipped');
 });
 

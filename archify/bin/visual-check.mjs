@@ -56,11 +56,11 @@ function screenshotKey(width, height, theme) {
   return `${width}x${height}:${theme}`;
 }
 
-export function sidecarPaths(artifactPath, { outDir } = {}) {
+function evidenceSidecarPaths(artifactPath, { outDir, kind } = {}) {
   const artifact = path.resolve(artifactPath);
   const stem = path.basename(artifact).replace(/\.html?$/i, '');
   const directory = outDir ? path.resolve(outDir) : path.dirname(artifact);
-  const base = path.join(directory, `${stem}.visual-check`);
+  const base = path.join(directory, `${stem}.${kind}`);
   const screenshots = CAPTURE_VIEWPORTS.flatMap(({ width, height }) => THEMES.map((theme) => ({
     width,
     height,
@@ -74,6 +74,14 @@ export function sidecarPaths(artifactPath, { outDir } = {}) {
     contactSheetImage: `${base}.contact.png`,
     screenshots,
   };
+}
+
+export function sidecarPaths(artifactPath, { outDir } = {}) {
+  return evidenceSidecarPaths(artifactPath, { outDir, kind: 'visual-check' });
+}
+
+export function browserCheckSidecarPaths(artifactPath, { outDir } = {}) {
+  return evidenceSidecarPaths(artifactPath, { outDir, kind: 'browser-check' });
 }
 
 function cleanupCaptureSidecars(paths) {
@@ -685,9 +693,23 @@ function failureDiagnostic({ code, message, subject, evidence, supportedFixes, s
   return { code, severity, message, subject, evidence, supportedFixes };
 }
 
-function observationDiagnostics({ artifact, allObservations, readabilityObservations }) {
+function observationDiagnostics({ artifact, allObservations, readabilityObservations, command }) {
   const diagnostics = [];
   for (const entry of allObservations) {
+    if (entry.resolvedTheme !== entry.theme) {
+      diagnostics.push(failureDiagnostic({
+        code: 'viewer/theme-state',
+        message: `The rendered artifact resolved ${entry.resolvedTheme || 'no theme'} instead of the requested ${entry.theme} theme at ${entry.width}x${entry.height}.`,
+        subject: viewportSubject(artifact, entry),
+        evidence: {
+          requestedTheme: entry.theme,
+          resolvedTheme: entry.resolvedTheme,
+        },
+        supportedFixes: [
+          `restore deterministic ${entry.theme} theme resolution, then rerun ${command}`,
+        ],
+      }));
+    }
     if (!entry.ok) {
       diagnostics.push(failureDiagnostic({
         code: 'viewer/viewport-overflow',
@@ -713,8 +735,8 @@ function observationDiagnostics({ artifact, allObservations, readabilityObservat
           ...(entry.overflowY && entry.workflowLanes?.length ? [
             'run validate workflow <source.json> --layout-json and compare the tallest rendered lane frames with source lanes, col and yOffset; frame IDs are rendered indices, not source lane IDs',
             'where ownership and explicit geometry permit, distribute stacked steps across logical columns and meaningful lanes before increasing yOffset; preserve nodes, branches, labels and hard pins',
-            'read references/authoring-contract.md#workflow-viewport-repair, then validate and deliver the changed source before rerunning visual-check on the new artifact; this is inspection guidance, not a verified coordinate fix',
-          ] : [`contain the rendered layout within ${entry.width}x${entry.height}, then rerun visual-check`]),
+            `read references/authoring-contract.md#workflow-viewport-repair, then validate and deliver the changed source before rerunning ${command} on the new artifact; this is inspection guidance, not a verified coordinate fix`,
+          ] : [`contain the rendered layout within ${entry.width}x${entry.height}, then rerun ${command}`]),
         ],
       }));
     }
@@ -725,7 +747,7 @@ function observationDiagnostics({ artifact, allObservations, readabilityObservat
         subject: viewportSubject(artifact, entry),
         evidence: { legendDockIntersectionArea: entry.legendDockIntersectionArea },
         supportedFixes: [
-          'move the SVG Legend or Viewer Dock until legendDockIntersectionArea is 0, then rerun visual-check',
+          `move the SVG Legend or Viewer Dock until legendDockIntersectionArea is 0, then rerun ${command}`,
         ],
       }));
     }
@@ -743,7 +765,7 @@ function observationDiagnostics({ artifact, allObservations, readabilityObservat
           requiredDockStageGap: entry.requiredDockStageGap,
         },
         supportedFixes: [
-          `adjust Viewer stage reservation or clipping until dockStageGap is at least ${entry.requiredDockStageGap} and dockStageIntersectionArea is 0, then rerun visual-check`,
+          `adjust Viewer stage reservation or clipping until dockStageGap is at least ${entry.requiredDockStageGap} and dockStageIntersectionArea is 0, then rerun ${command}`,
         ],
       }));
     }
@@ -761,21 +783,21 @@ function observationDiagnostics({ artifact, allObservations, readabilityObservat
         minimumRequiredNodeTextPx: entry.minimumRequiredNodeTextPx,
       },
       supportedFixes: [
-        `increase projected node text to at least ${entry.minimumRequiredNodeTextPx}px at ${entry.width}x${entry.height}, then rerun visual-check`,
+        `increase projected node text to at least ${entry.minimumRequiredNodeTextPx}px at ${entry.width}x${entry.height}, then rerun ${command}`,
       ],
     }));
   }
   return diagnostics;
 }
 
-function baseReceipt({ artifactPath, artifact, outputs, chrome, deliveryProvenance }) {
+function baseReceipt({ artifactPath, artifact, outputs, chrome, deliveryProvenance, command, capture }) {
   return {
     schemaVersion: 1,
     ok: false,
-    command: 'visual-check',
+    command,
     evidenceKind: 'automated-browser',
     status: 'fail',
-    visualReview: 'pending',
+    visualReview: capture ? 'pending' : 'not-requested',
     ...(deliveryProvenance ? {
       provenance: deliveryProvenance.status,
       ...(deliveryProvenance.receiptId ? { deliveryReceiptId: deliveryProvenance.receiptId } : {}),
@@ -793,15 +815,23 @@ function baseReceipt({ artifactPath, artifact, outputs, chrome, deliveryProvenan
       policy: 'fit-or-reader-declared-readable-vertical-scroll',
       viewports: [],
     },
+    themeStates: { status: 'fail', viewports: [] },
     readability: { status: 'fail', minimumProjectedNodeTextPx: MIN_PROJECTED_NODE_TEXT_PX, viewports: [] },
     viewerChrome: { status: 'fail', viewports: [] },
-    captures: { status: 'fail', screenshots: [], contactSheet: null, contactSheetImage: null },
+    captures: {
+      status: capture ? 'fail' : 'not-requested',
+      screenshots: [],
+      contactSheet: null,
+      contactSheetImage: null,
+    },
     sidecars: {
       ...(path.dirname(outputs.receipt) !== path.dirname(artifactPath)
         ? { directory: path.dirname(outputs.receipt) } : {}),
       receipt: path.basename(outputs.receipt),
-      contactSheet: path.basename(outputs.contactSheet),
-      contactSheetImage: path.basename(outputs.contactSheetImage),
+      ...(capture ? {
+        contactSheet: path.basename(outputs.contactSheet),
+        contactSheetImage: path.basename(outputs.contactSheetImage),
+      } : {}),
     },
   };
 }
@@ -810,8 +840,10 @@ function persistReceipt(outputs, receipt) {
   writeAtomic(outputs.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
 }
 
-export function persistVisualCheckFailure(artifactPath, failure, { outDir } = {}) {
-  const outputs = sidecarPaths(artifactPath, { outDir });
+function persistBrowserEvidenceFailure(artifactPath, failure, { outDir, command, capture }) {
+  const outputs = command === 'browser-check'
+    ? browserCheckSidecarPaths(artifactPath, { outDir })
+    : sidecarPaths(artifactPath, { outDir });
   const receipt = {
     ...failure,
     ok: false, status: 'fail',
@@ -820,13 +852,21 @@ export function persistVisualCheckFailure(artifactPath, failure, { outDir } = {}
       policy: 'fit-or-reader-declared-readable-vertical-scroll',
       viewports: [],
     },
-    captures: { status: 'fail', screenshots: [], contactSheet: null, contactSheetImage: null },
+    themeStates: { status: 'fail', viewports: [] },
+    captures: {
+      status: capture ? 'fail' : 'not-requested',
+      screenshots: [],
+      contactSheet: null,
+      contactSheetImage: null,
+    },
     sidecars: {
       ...(path.dirname(outputs.receipt) !== path.dirname(path.resolve(artifactPath))
         ? { directory: path.dirname(outputs.receipt) } : {}),
       receipt: path.basename(outputs.receipt),
-      contactSheet: path.basename(outputs.contactSheet),
-      contactSheetImage: path.basename(outputs.contactSheetImage),
+      ...(capture ? {
+        contactSheet: path.basename(outputs.contactSheet),
+        contactSheetImage: path.basename(outputs.contactSheetImage),
+      } : {}),
     },
   };
   const errors = [];
@@ -840,7 +880,7 @@ export function persistVisualCheckFailure(artifactPath, failure, { outDir } = {}
     receipt.diagnostics = [...(failure.diagnostics || []), failureDiagnostic({
       code: 'viewer/evidence-write', message: 'Previous visual evidence could not be fully invalidated or replaced.',
       subject: { artifact: path.resolve(artifactPath) }, evidence: { errors },
-      supportedFixes: ['restore write access to the evidence files and rerun visual-check'],
+      supportedFixes: [`restore write access to the evidence files and rerun ${command}`],
     })];
   };
   if (errors.length) reportErrors();
@@ -853,7 +893,19 @@ export function persistVisualCheckFailure(artifactPath, failure, { outDir } = {}
   return receipt;
 }
 
-export async function runVisualCheck({
+export function persistVisualCheckFailure(artifactPath, failure, { outDir } = {}) {
+  return persistBrowserEvidenceFailure(artifactPath, failure, {
+    outDir, command: 'visual-check', capture: true,
+  });
+}
+
+export function persistBrowserCheckFailure(artifactPath, failure, { outDir } = {}) {
+  return persistBrowserEvidenceFailure(artifactPath, failure, {
+    outDir, command: 'browser-check', capture: false,
+  });
+}
+
+async function runBrowserEvidence({
   artifactPath,
   outDir,
   chromePath,
@@ -861,22 +913,27 @@ export async function runVisualCheck({
   browserFactory = async (resolvedChrome) => new ChromeVisualBrowser(resolvedChrome),
   deliveryProvenance,
   verifyArtifact,
+  command,
+  capture,
 } = {}) {
-  if (!artifactPath) throw new Error('visual-check requires one delivered HTML artifact.');
+  if (!artifactPath) throw new Error(`${command} requires one delivered HTML artifact.`);
   const artifact = path.resolve(artifactPath);
-  if (!/\.html?$/i.test(artifact)) throw new Error('visual-check requires an .html artifact.');
+  if (!/\.html?$/i.test(artifact)) throw new Error(`${command} requires an .html artifact.`);
   const artifactBytes = fs.readFileSync(artifact);
-  const outputs = sidecarPaths(artifact, { outDir });
+  const outputs = command === 'browser-check'
+    ? browserCheckSidecarPaths(artifact, { outDir })
+    : sidecarPaths(artifact, { outDir });
   fs.mkdirSync(path.dirname(outputs.receipt), { recursive: true });
   try {
     verifyArtifact?.(artifactBytes);
   } catch (error) {
-    return { exitCode: EXIT.fail, receipt: persistVisualCheckFailure(artifact, {
-      schemaVersion: 1, command: 'visual-check', evidenceKind: 'automated-browser', visualReview: 'pending',
+    return { exitCode: EXIT.fail, receipt: persistBrowserEvidenceFailure(artifact, {
+      schemaVersion: 1, command, evidenceKind: 'automated-browser',
+      visualReview: capture ? 'pending' : 'not-requested',
       artifact: { path: artifact, sha256: sha256(artifactBytes), bytes: artifactBytes.byteLength },
       provenance: error.deliveryProvenance?.status, error: error.message,
       diagnostics: error.archifyDiagnostics || [],
-    }, { outDir }) };
+    }, { outDir, command, capture }) };
   }
   cleanupCaptureSidecars(outputs);
   safeUnlink(outputs.receipt);
@@ -886,6 +943,8 @@ export async function runVisualCheck({
     artifactPath: artifact,
     artifact: artifactBytes,
     outputs,
+    command,
+    capture,
     chrome: resolvedChrome
       ? { status: 'available', executable: resolvedChrome }
       : { status: 'unavailable', executable: null },
@@ -895,9 +954,10 @@ export async function runVisualCheck({
   if (!resolvedChrome) {
     receipt.status = 'skipped';
     receipt.containment.status = 'skipped';
+    receipt.themeStates.status = 'skipped';
     receipt.readability.status = 'skipped';
     receipt.viewerChrome.status = 'skipped';
-    receipt.captures.status = 'skipped';
+    if (capture) receipt.captures.status = 'skipped';
     receipt.error = 'Chrome or Chromium is unavailable. Set ARCHIFY_CHROME to its executable path.';
     receipt.diagnostics = [failureDiagnostic({
       code: 'viewer/chrome-unavailable',
@@ -905,7 +965,7 @@ export async function runVisualCheck({
       message: receipt.error,
       subject: { artifact },
       evidence: { executable: null },
-      supportedFixes: ['set ARCHIFY_CHROME to a Chrome or Chromium executable and rerun visual-check'],
+      supportedFixes: [`set ARCHIFY_CHROME to a Chrome or Chromium executable and rerun ${command}`],
     })];
     persistReceipt(outputs, receipt);
     return { exitCode: EXIT.skipped, receipt };
@@ -915,7 +975,7 @@ export async function runVisualCheck({
   try {
     browser = await browserFactory(resolvedChrome);
     const observations = new Map();
-    const screenshotsByKey = new Map(outputs.screenshots.map((entry) => [
+    const screenshotsByKey = new Map((capture ? outputs.screenshots : []).map((entry) => [
       screenshotKey(entry.width, entry.height, entry.theme),
       entry,
     ]));
@@ -938,7 +998,7 @@ export async function runVisualCheck({
         artifactPath: artifact,
         ...viewport,
         theme: 'dark',
-        screenshotPath: screenshot.path,
+        ...(screenshot ? { screenshotPath: screenshot.path } : {}),
       });
       observations.set(key, observation({ ...viewport, theme: 'dark', metrics }));
     }
@@ -946,44 +1006,61 @@ export async function runVisualCheck({
     const afterBytes = fs.readFileSync(artifact);
     verifyArtifact?.(afterBytes);
     if (sha256(afterBytes) !== receipt.artifact.sha256 || afterBytes.byteLength !== receipt.artifact.bytes) {
-      throw new Error('The delivered artifact changed while visual-check was running.');
+      throw new Error(`The delivered artifact changed while ${command} was running.`);
     }
 
     receipt.containment.viewports = VISUAL_CHECK_VIEWPORTS.map(({ width, height }) => (
       observations.get(screenshotKey(width, height, 'light'))
     ));
+    receipt.themeStates.viewports = CAPTURE_VIEWPORTS.flatMap(({ width, height }) => THEMES.map((theme) => {
+      const entry = observations.get(screenshotKey(width, height, theme));
+      return {
+        width,
+        height,
+        requestedTheme: theme,
+        resolvedTheme: entry.resolvedTheme,
+        ok: entry.resolvedTheme === theme,
+      };
+    }));
     receipt.readability.viewports = receipt.containment.viewports.map((entry) => ({ ...entry }));
     receipt.viewerChrome.viewports = receipt.containment.viewports.map((entry) => ({ ...entry }));
-    receipt.captures.screenshots = outputs.screenshots.map((entry) => ({
-      ...observations.get(screenshotKey(entry.width, entry.height, entry.theme)),
-      file: path.basename(entry.path),
-    }));
+    if (capture) {
+      receipt.captures.screenshots = outputs.screenshots.map((entry) => ({
+        ...observations.get(screenshotKey(entry.width, entry.height, entry.theme)),
+        file: path.basename(entry.path),
+      }));
+    }
     const allObservations = [...observations.values()];
     const containmentPass = allObservations.every((entry) => entry.ok);
+    const themeStatePass = receipt.themeStates.viewports.every((entry) => entry.ok);
     const readabilityPass = receipt.readability.viewports.every((entry) => entry.readabilityOk);
     const viewerChromePass = allObservations.every((entry) => entry.viewerChromeOk);
     receipt.diagnostics = observationDiagnostics({
       artifact,
       allObservations,
       readabilityObservations: receipt.readability.viewports,
+      command,
     });
     receipt.containment.status = containmentPass ? 'pass' : 'fail';
+    receipt.themeStates.status = themeStatePass ? 'pass' : 'fail';
     receipt.readability.status = readabilityPass ? 'pass' : 'fail';
     receipt.viewerChrome.status = viewerChromePass ? 'pass' : 'fail';
-    receipt.captures.status = 'pass';
-    receipt.captures.contactSheet = path.basename(outputs.contactSheet);
-    receipt.captures.contactSheetImage = path.basename(outputs.contactSheetImage);
-    receipt.status = containmentPass && readabilityPass && viewerChromePass ? 'pass' : 'fail';
-    receipt.ok = containmentPass && readabilityPass && viewerChromePass;
-    writeAtomic(outputs.contactSheet, contactSheetHtml({
-      artifactPath: artifact,
-      receipt,
-      screenshots: receipt.captures.screenshots,
-    }));
-    receipt.captures.contactSheetImageSize = await browser.capturePage({
-      pagePath: outputs.contactSheet,
-      screenshotPath: outputs.contactSheetImage,
-    });
+    receipt.status = containmentPass && themeStatePass && readabilityPass && viewerChromePass ? 'pass' : 'fail';
+    receipt.ok = containmentPass && themeStatePass && readabilityPass && viewerChromePass;
+    if (capture) {
+      receipt.captures.status = 'pass';
+      receipt.captures.contactSheet = path.basename(outputs.contactSheet);
+      receipt.captures.contactSheetImage = path.basename(outputs.contactSheetImage);
+      writeAtomic(outputs.contactSheet, contactSheetHtml({
+        artifactPath: artifact,
+        receipt,
+        screenshots: receipt.captures.screenshots,
+      }));
+      receipt.captures.contactSheetImageSize = await browser.capturePage({
+        pagePath: outputs.contactSheet,
+        screenshotPath: outputs.contactSheetImage,
+      });
+    }
     persistReceipt(outputs, receipt);
     return { exitCode: receipt.ok ? EXIT.pass : EXIT.fail, receipt };
   } catch (error) {
@@ -991,22 +1068,35 @@ export async function runVisualCheck({
     receipt.ok = false;
     receipt.error = error.message;
     receipt.containment.status = 'fail';
+    receipt.themeStates.status = 'fail';
+    receipt.themeStates.viewports = [];
     receipt.readability.status = 'fail';
     receipt.viewerChrome.status = 'fail';
-    receipt.captures.status = 'fail';
+    receipt.captures.status = capture ? 'fail' : 'not-requested';
     receipt.captures.screenshots = [];
     receipt.captures.contactSheet = null;
     receipt.captures.contactSheetImage = null;
     if (error.deliveryProvenance) receipt.provenance = error.deliveryProvenance.status;
     receipt.diagnostics = error.archifyDiagnostics || [failureDiagnostic({
-      code: 'viewer/visual-check-runtime',
-      message: 'visual-check could not complete its Chrome inspection.',
+      code: `viewer/${command}-runtime`,
+      message: `${command} could not complete its Chrome inspection.`,
       subject: { artifact },
       evidence: { reason: error.message },
-      supportedFixes: ['resolve the reported Chrome inspection error, then rerun visual-check'],
+      supportedFixes: [`resolve the reported Chrome inspection error, then rerun ${command}`],
     })];
-    return { exitCode: EXIT.fail, receipt: persistVisualCheckFailure(artifact, receipt, { outDir }) };
+    return {
+      exitCode: EXIT.fail,
+      receipt: persistBrowserEvidenceFailure(artifact, receipt, { outDir, command, capture }),
+    };
   } finally {
     if (browser?.close) await browser.close();
   }
+}
+
+export async function runVisualCheck(options = {}) {
+  return runBrowserEvidence({ ...options, command: 'visual-check', capture: true });
+}
+
+export async function runBrowserCheck(options = {}) {
+  return runBrowserEvidence({ ...options, command: 'browser-check', capture: false });
 }

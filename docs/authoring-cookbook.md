@@ -99,12 +99,12 @@ Repository revision, provider, link mode, or location representation changes are
 
 ## 6. Inspect the exact final file
 
-The deterministic checks do not exercise the Viewer in a browser. Collect automated browser evidence from the exact delivered HTML when Chrome or Chromium is available:
+The artifact checks do not exercise the Viewer in a browser. Collect the required capture-free browser evidence from the exact delivered HTML when Chrome or Chromium is available:
 
 ```bash
-node bin/archify.mjs visual-check web-app.html --json
+node bin/archify.mjs browser-check web-app.html --json
 ```
 
-This receipt measures bounded runtime behavior; it does not approve perceptual polish. Inspect the HTML or generated screenshots separately. Follow the [delivery contract](../archify/references/delivery-contract.md) when recording supplementary manual browser work; an unconstrained glance supports only perceptual review.
+This receipt measures bounded runtime behavior without screenshots or an image-capable model. Use `visual-check` only for a requested visual review, a renderer/Viewer regression, a low-confidence novel layout, or a sampled audit. Follow the [delivery contract](../archify/references/delivery-contract.md) for that optional capture path; an unconstrained glance supports only perceptual review.
 
 Use the delivery contract for the canonical browser-evidence coverage, artifact binding, visual-review status, and handoff fields. The [Skill contract](../archify/SKILL.md) explains the authoring invariants and the bounded repair loop.

@@ -11,8 +11,10 @@ import { fileURLToPath } from 'node:url';
 import {
   ChromeVisualBrowser,
   VISUAL_CHECK_VIEWPORTS,
+  browserCheckSidecarPaths,
   chromeVisualBrowserArgs,
   persistVisualCheckFailure,
+  runBrowserCheck,
   runVisualCheck,
   sidecarPaths,
 } from '../bin/visual-check.mjs';
@@ -39,11 +41,14 @@ function fakeBrowser({
   chromeCollisionAt,
   stageCollisionAt,
   stageGapAt,
+  resolvedThemeAt,
   screenshotFailure,
 } = {}) {
   const calls = [];
+  const captureCalls = [];
   return {
     calls,
+    captureCalls,
     async inspect({ width, height, theme, screenshotPath }) {
       calls.push({ width, height, theme, screenshotPath });
       if (screenshotPath && screenshotFailure?.({ width, height, theme })) {
@@ -62,7 +67,7 @@ function fakeBrowser({
         innerHeight: height,
         scrollWidth: width + (overflow ? 1 : 0),
         scrollHeight: height + (readableScroll ? 240 : 0),
-        resolvedTheme: theme,
+        resolvedTheme: resolvedThemeAt?.({ width, height, theme }) || theme,
         readerLayout: readableScroll ? 'adaptive' : null,
         readerOverflow: readableScroll ? 'authored' : null,
         readerFit: readableScroll ? 'intrinsic-height' : null,
@@ -83,6 +88,7 @@ function fakeBrowser({
       };
     },
     async capturePage({ screenshotPath }) {
+      captureCalls.push({ screenshotPath });
       fs.writeFileSync(screenshotPath, png);
       return { width: 1600, height: 1200 };
     },
@@ -202,6 +208,18 @@ test('visual-check records four containment viewports and four endpoint theme ca
   assert.equal(result.receipt.deliveryReceiptId, 'delivery-receipt-123');
   assert.deepEqual(result.receipt.diagnostics, []);
   assert.equal(result.receipt.visualReview, 'pending');
+  assert.equal(result.receipt.themeStates.status, 'pass');
+  assert.deepEqual(
+    result.receipt.themeStates.viewports.map(({ width, height, requestedTheme, resolvedTheme, ok }) => (
+      [width, height, requestedTheme, resolvedTheme, ok]
+    )),
+    [
+      [1440, 900, 'light', 'light', true],
+      [1440, 900, 'dark', 'dark', true],
+      [2048, 1320, 'light', 'light', true],
+      [2048, 1320, 'dark', 'dark', true],
+    ],
+  );
   assert.equal(result.receipt.viewerChrome.status, 'pass');
   assert.equal(result.receipt.containment.viewports.length, VISUAL_CHECK_VIEWPORTS.length);
   assert.equal(result.receipt.containment.viewports.every((entry) => entry.ok), true);
@@ -232,6 +250,57 @@ test('visual-check records four containment viewports and four endpoint theme ca
     assert.match(contactSheet, new RegExp(path.basename(screenshot.path).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.doesNotMatch(contactSheet, new RegExp(screenshot.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+});
+
+test('browser-check proves rendered behavior without creating screenshots or requiring perceptual review', async () => {
+  const input = artifact('browser-check-passing.html');
+  const browser = fakeBrowser();
+  const result = await runBrowserCheck({
+    artifactPath: input,
+    chromePath: '/fake/chrome',
+    browserFactory: async () => browser,
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.receipt.command, 'browser-check');
+  assert.equal(result.receipt.status, 'pass');
+  assert.equal(result.receipt.visualReview, 'not-requested');
+  assert.equal(result.receipt.themeStates.status, 'pass');
+  assert.equal(result.receipt.themeStates.viewports.length, 4);
+  assert.equal(result.receipt.captures.status, 'not-requested');
+  assert.deepEqual(result.receipt.captures.screenshots, []);
+  assert.equal(result.receipt.captures.contactSheet, null);
+  assert.equal(result.receipt.captures.contactSheetImage, null);
+  assert.equal(browser.calls.length, VISUAL_CHECK_VIEWPORTS.length + 2);
+  assert.equal(browser.calls.every(({ screenshotPath }) => screenshotPath === undefined), true);
+  assert.deepEqual(browser.captureCalls, []);
+
+  const outputs = browserCheckSidecarPaths(input);
+  assert.equal(fs.existsSync(outputs.receipt), true);
+  assert.equal(fs.existsSync(outputs.contactSheet), false);
+  assert.equal(fs.existsSync(outputs.contactSheetImage), false);
+  assert.equal(outputs.screenshots.every(({ path: screenshot }) => !fs.existsSync(screenshot)), true);
+  assert.deepEqual(result.receipt.sidecars, { receipt: path.basename(outputs.receipt) });
+});
+
+test('browser-check fails when an endpoint theme does not resolve without needing image inspection', async () => {
+  const input = artifact('browser-check-theme-mismatch.html');
+  const browser = fakeBrowser({
+    resolvedThemeAt: ({ theme }) => theme === 'dark' ? 'light' : theme,
+  });
+  const result = await runBrowserCheck({
+    artifactPath: input,
+    chromePath: '/fake/chrome',
+    browserFactory: async () => browser,
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.receipt.status, 'fail');
+  assert.equal(result.receipt.themeStates.status, 'fail');
+  assert.equal(result.receipt.themeStates.viewports.filter(({ ok }) => !ok).length, 2);
+  assert.equal(result.receipt.diagnostics.filter(({ code }) => code === 'viewer/theme-state').length, 2);
+  assert.equal(result.receipt.captures.status, 'not-requested');
+  assert.deepEqual(browser.captureCalls, []);
 });
 
 test('sidecarPaths places outputs in outDir instead of beside the artifact', () => {

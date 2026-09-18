@@ -37,18 +37,20 @@ test('deployment ownership stays explicit, fact-backed, and cannot be removed to
   assert.match(skill, /must not remove.*engineering profile.*pass validation/i);
 });
 
-test('visual-check stays a pending sidecar receipt instead of a polish claim', () => {
+test('browser-check is the capture-free gate while visual-check stays an optional pending capture receipt', () => {
   const deliveryContract = fs.readFileSync(
     path.join(skillRoot, 'references', 'delivery-contract.md'),
     'utf8',
   );
-  assert.match(skill, /visual-check <output\.html> --json/);
-  assert.match(skill, /automated browser evidence[\s\S]*perceptual visual review/i);
+  assert.match(skill, /browser-check[\s\S]*machine-readable browser evidence/i);
+  assert.match(skill, /visual-check[\s\S]*capture-producing command/i);
   assert.match(skill, /references\/delivery-contract\.md/);
-  assert.match(skill, /without (?:rerendering or )?modifying/i);
+  assert.match(skill, /without modifying, rerendering, or capturing/i);
 
+  assert.match(deliveryContract, /browser-check <output\.html> --json/);
   assert.match(deliveryContract, /visual-check <output\.html> --json/);
   assert.match(deliveryContract, /1440×900[\s\S]*1600×1000[\s\S]*1920×1080[\s\S]*2048×1320/);
+  assert.match(deliveryContract, /visualReview: "not-requested"/);
   assert.match(deliveryContract, /visualReview: "pending"/);
-  assert.match(deliveryContract, /never changes.*delivered|without (?:rerendering or )?modifying/i);
+  assert.match(deliveryContract, /without\s+rerendering or modifying/i);
 });
