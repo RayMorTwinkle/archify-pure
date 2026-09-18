@@ -32,6 +32,8 @@ Use this bounded path for ordinary generation. Do not read the optional Viewer R
    node bin/archify.mjs finalize <type> <candidate.json> <output.html> --quality showcase --json
    ```
 
+   A passing receipt proves that the included `validate`, `deliver`, strict `check`, and real-browser `visual-check` gates passed. When a request names those gates or asks that each pass, do not rerun the individual commands afterward; use a standalone command only for an explicitly separate execution or focused failure diagnosis.
+
    A non-zero exit can never be described as success. If a gate fails, read the reported full receipt, use its diagnosed subjects and measured evidence to choose one repair hypothesis, then rerun. Missing evidence is a reason to inspect layout, not guess a constraint from the message. Compare remaining diagnostic codes and subjects within the same validation stage; a later stage can reveal new issues. If the same issue survives two focused repairs, inspect its measured geometry or the relevant implementation before changing that hypothesis. If it remains unresolved after that investigation and one evidence-based repair, stop and report it truthfully. A lower error count does not justify changing the diagram’s meaning.
 
 ## Update awareness
@@ -105,7 +107,7 @@ Use `validate` during repair. After the final passing validation freezes the can
 node bin/archify.mjs finalize <type> <candidate.json> <output.html> --quality showcase --json
 ```
 
-`finalize` serially runs showcase `validate`, verified `deliver`, strict provenance `check`, and real-browser `visual-check`, stopping at the first non-passing gate. Its stdout is a compact receipt for the agent; the complete stage receipts remain in the reported `<output-stem>.finalize.json` sidecar. Read that full sidecar only when a gate fails or detailed evidence is needed. A passing command still reports `visualReview: "pending"`.
+`finalize` serially runs showcase `validate`, verified `deliver`, strict provenance `check`, and real-browser `visual-check`, stopping at the first non-passing gate. Its stdout is a compact receipt for the agent; the complete stage receipts remain in the reported `<output-stem>.finalize.json` sidecar. Read that full sidecar only when a gate fails or detailed evidence is needed. A passing `finalize` receipt is the direct evidence that all four named gates passed. When a request names those gates or asks that each pass, do not rerun the individual commands afterward; use them only when the request explicitly requires separate command executions or a failure needs focused diagnosis. A passing command still reports `visualReview: "pending"`.
 
 After `finalize` passes, inspect the reported `.visual-check.contact.png` once with a capable image reader. Check both endpoint themes, the default READ view, crossings/corridors, label masks, node/card fit, focus/search/passport closure, and export cleanliness. Open an individual viewport PNG only when the contact sheet shows a possible defect that needs closer inspection. Record perceptual review separately from the automated result.
 

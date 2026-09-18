@@ -128,6 +128,11 @@ that aggregate sidecar path. The compact receipt deliberately keeps
 `visualReview: "pending"`; one command does not merge the independent
 acceptance claims below.
 
+A passing finalizer receipt is sufficient evidence for all four gates. Merely
+naming the gates or requiring each one to pass does not require replaying their
+standalone commands. Replay an individual command only when the request
+explicitly requires separate executions or focused failure diagnosis needs it.
+
 The individual commands remain authoritative and backward compatible. Use
 them directly for focused diagnosis, recovery, or when only one gate is
 required. A finalize failure does not relax any gate and does not turn a

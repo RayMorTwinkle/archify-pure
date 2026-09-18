@@ -59,10 +59,12 @@ test('strict provenance check must succeed before visual-check', () => {
 test('skill prefers one compact finalizer and one image-reader overview for the passing path', () => {
   assert.match(skill, /archify\.mjs finalize <type> <candidate\.json> <output\.html> --quality showcase --json/);
   assert.match(skill, /stdout is a compact receipt/i);
+  assert.match(skill, /When a request names those gates or asks that each pass, do not rerun the individual commands afterward/);
   assert.match(skill, /\.visual-check\.contact\.png/);
   assert.match(skill, /Open an individual viewport PNG only when the contact sheet shows a possible defect/i);
   assert.match(delivery, /stops at the first failed or skipped stage/i);
   assert.match(delivery, /Complete stage receipts and[\s\S]*<output-stem>\.finalize\.json/i);
+  assert.match(delivery, /Merely\s+naming the gates or requiring each one to pass does not require replaying their\s+standalone commands/);
   assert.match(delivery, /single `\.visual-check\.contact\.png`[\s\S]*default image-reader entry point/i);
 });
 

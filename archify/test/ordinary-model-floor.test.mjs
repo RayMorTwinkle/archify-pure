@@ -925,6 +925,7 @@ test('packaged skill puts a bounded ordinary-model path before progressive featu
     '`finalize` is the complete acceptance command',
     'finalize <type> <candidate.json> <output.html> --quality showcase --json',
     'Do not repeat a standalone validation only for handoff',
+    'When a request names those gates or asks that each pass, do not rerun the individual commands afterward',
     'A non-zero exit can never be described as success',
     'Do not read `renderers/shared/geometry.mjs`',
     'validate <type>',
