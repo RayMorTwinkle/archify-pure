@@ -30,7 +30,7 @@ test('strict provenance check must succeed before visual-check', () => {
   const workflows = [
     {
       name: 'SKILL.md',
-      section: skill.match(/After `deliver` exits zero, require current delivery evidence before handoff:[\s\S]*?node bin\/archify\.mjs visual-check <output\.html> --json --require-provenance/)?.[0] ?? '',
+      section: skill.match(/The individual commands remain available for recovery and focused debugging\.[\s\S]*?node bin\/archify\.mjs visual-check <output\.html> --json --require-provenance/)?.[0] ?? '',
       check: 'node bin/archify.mjs check <output.html> --require-provenance',
       visualCheck: 'node bin/archify.mjs visual-check <output.html> --json --require-provenance',
     },
@@ -50,10 +50,20 @@ test('strict provenance check must succeed before visual-check', () => {
     assert.ok(checkIndex < visualCheckIndex, `${name}: strict check command precedes visual-check`);
     assert.match(
       section,
-      /(?:after the strict `check` above exits zero[\s\S]{0,300}visual-check|visual-check`? only after that\s+strict check exits zero)/i,
+      /(?:after the strict `check` above exits zero[\s\S]{0,300}visual-check|run `visual-check` only after that strict check exits zero|visual-check`? only after that\s+strict check exits zero)/i,
       `${name}: visual-check requires a successful strict check`,
     );
   }
+});
+
+test('skill prefers one compact finalizer and one image-reader overview for the passing path', () => {
+  assert.match(skill, /archify\.mjs finalize <type> <candidate\.json> <output\.html> --quality showcase --json/);
+  assert.match(skill, /stdout is a compact receipt/i);
+  assert.match(skill, /\.visual-check\.contact\.png/);
+  assert.match(skill, /Open an individual viewport PNG only when the contact sheet shows a possible defect/i);
+  assert.match(delivery, /stops at the first failed or skipped stage/i);
+  assert.match(delivery, /Complete stage receipts and[\s\S]*<output-stem>\.finalize\.json/i);
+  assert.match(delivery, /single `\.visual-check\.contact\.png`[\s\S]*default image-reader entry point/i);
 });
 
 test('handoff browser evidence mirrors only the automated visual-check outcome', () => {

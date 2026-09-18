@@ -111,6 +111,28 @@ node bin/archify.mjs deliver <type> <candidate.json> <output.html> --quality sho
 
 Deliver reads the specification once, writes those exact bytes to a private same-directory candidate snapshot, renders that snapshot, runs the complete artifact checker, and only replaces the target after all artifact checks pass. The JSON receipt includes SHA-256 and byte counts for both `specification` and `artifact`.
 
+For the ordinary agent handoff path, prefer the serial finalizer:
+
+```bash
+node bin/archify.mjs finalize <type> <candidate.json> <output.html> --quality showcase --json
+```
+
+`finalize` invokes showcase `validate`, verified `deliver`, strict
+`check --require-provenance`, and `visual-check --require-provenance` in that order. It
+stops at the first failed or skipped stage and preserves that stage's full
+receipt. Its stdout is one compact JSON object with gate statuses, diagnostic
+codes, artifact identity, and evidence paths. Complete stage receipts and
+timings are written atomically to `<output-stem>.finalize.json`, or beside the
+visual evidence when `--out-dir` is supplied. `--receipt <path.json>` overrides
+that aggregate sidecar path. The compact receipt deliberately keeps
+`visualReview: "pending"`; one command does not merge the independent
+acceptance claims below.
+
+The individual commands remain authoritative and backward compatible. Use
+them directly for focused diagnosis, recovery, or when only one gate is
+required. A finalize failure does not relax any gate and does not turn a
+preserved older artifact into a current successful delivery.
+
 The pair commit is recoverable, not a claim that two filesystem paths change
 atomically or are durable across power loss. Journal finalization is part of
 that commit: a caught failure while verifying or removing the journal rolls
@@ -186,14 +208,17 @@ node bin/archify.mjs visual-check <output.html> --json --require-provenance
 The zero-dependency command uses Chrome/Chromium through the DevTools pipe. It
 measures light-theme containment at 1440×900, 1600×1000, 1920×1080, and
 2048×1320, then captures light/dark screenshots at 1440×900 and 2048×1320. It
-writes four PNG sidecars, one relative-path HTML contact sheet, and one JSON
-receipt beside the artifact by default — pass `--out-dir <dir>` to write all of
+writes four viewport PNG sidecars, one relative-path HTML contact sheet, one
+PNG rendering of that full contact sheet, and one JSON receipt beside the
+artifact by default — pass `--out-dir <dir>` to write all of
 them into a separate directory instead (created if missing) when a project
 keeps its testing/evidence artifacts apart from the delivered `.json`/`.html`
 result pair. When that directory differs from the artifact directory, the
 receipt records its absolute path as `sidecars.directory`; sidecar filenames
-resolve there, otherwise beside `artifact.path`. The contact sheet keeps its
-image links relative for portability. The receipt binds the source artifact SHA-256 and
+resolve there, otherwise beside `artifact.path`. The HTML contact sheet keeps
+its image links relative for portability. The single `.visual-check.contact.png`
+is the default image-reader entry point; inspect individual viewport PNGs only
+when its overview exposes a possible defect. The receipt binds the source artifact SHA-256 and
 byte count, identifies `evidenceKind: "automated-browser"`, records READ plus
 Still runtime state, and always reports `visualReview: "pending"`; automated
 browser evidence cannot claim perceptual review.

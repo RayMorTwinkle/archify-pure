@@ -19,20 +19,20 @@ Use this bounded path for ordinary generation. Do not read the optional Viewer R
 1. Choose `architecture`, `workflow`, `sequence`, `dataflow`, or `lifecycle` from the question.
 2. Read one matching schema in `schemas/`, `schemas/common.schema.json`, and one matching JSON example in `examples/`. Read only those files. Fresh authorship means new stable IDs, domain wording, and layout; use the example for field shape, not facts. New workflow sources use `schema_version: 2` and its readable layout contract; keep `schema_version: 1` only when preserving an existing workflow's fixed geometry. When real product identity matters, query `node bin/archify.mjs brands "<name>" --json`; read `references/brand-marks.md` only for an unknown brand with a user-provided URL.
 3. Artifact first: the next tool action must write the candidate. Write the candidate before inspecting renderer internals. Do not plan exact coordinates in prose. Start with one clear main path, short side branches, and sparse labels. Use roughly 12 primary nodes as an initial readability budget. Preserve every node and relationship required by the user's question; for larger diagrams, group related content where the selected schema supports it. Set `meta.quality_profile` to `"showcase"` unless the user explicitly requests a dense `standard` map. Start with automatic routes and labels. Do not add `via`, `channelX`, `channelY`, or `labelAt` before a diagnostic calls for one; test one repair hypothesis per round. When geometry fails or repeats, read the repair order in `references/authoring-contract.md` and inspect measured layout before manual routing: use `validate <type> <candidate.json> --layout-json` for architecture/workflow; for other types, use validation diagnostics and the rendered SVG geometry. Check whether unnecessary agent-added controls disable automatic port spread; preserve user-required route intent. If several edges share a constrained channel, compare a small node-layout change with adding route controls; validate the coupled change together while preserving required nodes, relationships, labels, and boundary membership.
-4. Validate after every candidate edit and immediately before handoff:
+4. Use standalone validation after every candidate edit that may need another repair:
 
    ```bash
    node bin/archify.mjs validate <type> <candidate.json> --quality showcase --json
    ```
 
-   A receipt with only 4 artifact checks is basic validation, never showcase acceptance. A showcase pass must report all 9 artifact checks with 0 composition errors and 0 warnings. If the candidate omits or misspells the exact `meta.quality_profile` field, fix it before geometry. For a workflow v2 geometry diagnosis, run `node bin/archify.mjs validate workflow <candidate.json> --layout-json` and use the stable compiler receipt; solver internals are not authoring controls. A passing final validation freezes the candidate: never edit it afterward.
-5. For a delivered HTML, `deliver` is the final acceptance command:
+   A receipt with only 4 artifact checks is basic validation, never showcase acceptance. A showcase pass must report all 9 artifact checks with 0 composition errors and 0 warnings. If the candidate omits or misspells the exact `meta.quality_profile` field, fix it before geometry. For a workflow v2 geometry diagnosis, run `node bin/archify.mjs validate workflow <candidate.json> --layout-json` and use the stable compiler receipt; solver internals are not authoring controls. A passing final validation freezes the candidate: never edit it afterward. Do not repeat a standalone validation only for handoff; `finalize` begins with the same showcase validation.
+5. For a delivered HTML, `finalize` is the complete acceptance command:
 
    ```bash
-   node bin/archify.mjs deliver <type> <candidate.json> <output.html> --quality showcase --json
+   node bin/archify.mjs finalize <type> <candidate.json> <output.html> --quality showcase --json
    ```
 
-   A non-zero exit can never be described as success. Continue to the strict delivery gate below only after `deliver` exits zero. If validation fails, use the diagnosed subjects and measured evidence to choose one repair hypothesis, then rerun. Missing evidence is a reason to inspect layout, not guess a constraint from the message. Compare remaining diagnostic codes and subjects within the same validation stage; a later stage can reveal new issues. If the same issue survives two focused repairs, inspect its measured geometry or the relevant implementation before changing that hypothesis. If it remains unresolved after that investigation and one evidence-based repair, stop and report it truthfully. A lower error count does not justify changing the diagram’s meaning.
+   A non-zero exit can never be described as success. If a gate fails, read the reported full receipt, use its diagnosed subjects and measured evidence to choose one repair hypothesis, then rerun. Missing evidence is a reason to inspect layout, not guess a constraint from the message. Compare remaining diagnostic codes and subjects within the same validation stage; a later stage can reveal new issues. If the same issue survives two focused repairs, inspect its measured geometry or the relevant implementation before changing that hypothesis. If it remains unresolved after that investigation and one evidence-based repair, stop and report it truthfully. A lower error count does not justify changing the diagram’s meaning.
 
 ## Update awareness
 
@@ -99,22 +99,25 @@ Read `references/authoring-contract.md` only when you need field enums, spacing 
 
 ## Delivery
 
-Use `validate` during repair and `deliver` once for final acceptance. This is deterministic artifact evidence; it does not exercise the Viewer in a browser. After `deliver` exits zero, require current delivery evidence before handoff:
+Use `validate` during repair. After the final passing validation freezes the candidate, run the complete acceptance path once:
 
 ```bash
-node bin/archify.mjs check <output.html> --require-provenance
+node bin/archify.mjs finalize <type> <candidate.json> <output.html> --quality showcase --json
 ```
 
-Read `references/delivery-contract.md` whenever `deliver`, strict `check`, or
-`visual-check` fails; provenance is not current; recovery metadata remains; or
-the same output path needs another delivery. That file is the canonical source
-for provenance, serialization, recovery, receipt, and browser-evidence rules.
+`finalize` serially runs showcase `validate`, verified `deliver`, strict provenance `check`, and real-browser `visual-check`, stopping at the first non-passing gate. Its stdout is a compact receipt for the agent; the complete stage receipts remain in the reported `<output-stem>.finalize.json` sidecar. Read that full sidecar only when a gate fails or detailed evidence is needed. A passing command still reports `visualReview: "pending"`.
 
-After the strict `check` above exits zero, collect bounded desktop evidence without modifying or rerendering the trusted HTML:
+After `finalize` passes, inspect the reported `.visual-check.contact.png` once with a capable image reader. Check both endpoint themes, the default READ view, crossings/corridors, label masks, node/card fit, focus/search/passport closure, and export cleanliness. Open an individual viewport PNG only when the contact sheet shows a possible defect that needs closer inspection. Record perceptual review separately from the automated result.
+
+The individual commands remain available for recovery and focused debugging. Keep their order strict: after `deliver` exits zero, require current delivery evidence with `check`; run `visual-check` only after that strict check exits zero:
 
 ```bash
+node bin/archify.mjs deliver <type> <candidate.json> <output.html> --quality showcase --json
+node bin/archify.mjs check <output.html> --require-provenance
 node bin/archify.mjs visual-check <output.html> --json --require-provenance
 ```
+
+Read `references/delivery-contract.md` whenever `finalize`, `deliver`, strict `check`, or `visual-check` fails; provenance is not current; recovery metadata remains; or the same output path needs another delivery. That file is the canonical source for provenance, serialization, recovery, receipt, and browser-evidence rules.
 
 For workflow viewport overflow, read [Workflow viewport repair](references/authoring-contract.md#workflow-viewport-repair) before the next layout edit.
 

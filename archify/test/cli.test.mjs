@@ -59,6 +59,7 @@ function visualEvidencePaths(file) {
   return {
     receipt: `${base}.json`,
     contactSheet: `${base}.html`,
+    contactSheetImage: `${base}.contact.png`,
     screenshots: [
       `${base}.1440x900.light.png`,
       `${base}.1440x900.dark.png`,
@@ -125,6 +126,7 @@ test('cli: help lists commands and diagram types', () => {
   assert.match(result.stdout, /archify render <type>/);
   assert.match(result.stdout, /archify compare architecture <base\.json> <head\.json>/);
   assert.match(result.stdout, /archify deliver <type>/);
+  assert.match(result.stdout, /archify finalize <type>/);
   assert.match(result.stdout, /archify preview <type>/);
   assert.match(result.stdout, /archify visual-check <output\.html>/);
   assert.match(result.stdout, /--open/);
@@ -143,6 +145,7 @@ test('cli: doctor reports a complete installation is ready', () => {
   assert.match(result.stdout, /\[ok\] Core template/);
   assert.match(result.stdout, /\[ok\] Example renderer/);
   assert.match(result.stdout, /\[ok\] Live preview runtime/);
+  assert.match(result.stdout, /\[ok\] Finalize runtime/);
   assert.match(result.stdout, /\[ok\] Scenario recipe guide/);
   assert.match(result.stdout, /\[ok\] Progressive authoring references/);
   assert.match(result.stdout, /\[ok\] Architecture compare runtime and proof fixtures/);
@@ -353,6 +356,32 @@ test('cli: visual-check returns a skipped receipt with exit 2 when Chrome is una
   assert.equal(receipt.visualReview, 'pending');
   assert.equal(receipt.chrome.status, 'unavailable');
   assert.equal(fs.existsSync(out.replace(/\.html$/, '.visual-check.json')), true);
+});
+
+test('cli: finalize emits one compact receipt and keeps complete stage evidence in its sidecar', () => {
+  const input = path.join(skillRoot, 'examples/web-app.architecture.json');
+  const out = path.join(tmp, 'finalize-skipped.html');
+  const outDir = path.join(tmp, 'finalize-skipped-evidence');
+  const missingChrome = path.join(tmp, 'missing-finalize-chrome');
+  const result = run([
+    'finalize', 'architecture', input, out,
+    '--quality', 'showcase', '--json', '--out-dir', outDir,
+  ], { env: { ...process.env, ARCHIFY_CHROME: missingChrome } });
+
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(result.stdout.trim().split('\n').length, 1, 'agent stdout stays compact');
+  const summary = JSON.parse(result.stdout);
+  assert.equal(summary.status, 'skipped');
+  assert.equal(summary.failedStage, 'visual-check');
+  assert.deepEqual(summary.gates, {
+    validate: 'pass', deliver: 'pass', check: 'pass', 'visual-check': 'skipped',
+  });
+  assert.equal(summary.visualReview, 'pending');
+  assert.equal(summary.evidence.receipt, path.join(outDir, 'finalize-skipped.finalize.json'));
+  const full = JSON.parse(fs.readFileSync(summary.evidence.receipt, 'utf8'));
+  assert.equal(full.stages.validate.receipt.checks.length, 9);
+  assert.equal(full.stages['visual-check'].receipt.status, 'skipped');
+  assert.equal(fs.existsSync(out), true, 'verified delivery remains available when browser evidence is skipped');
 });
 
 test('cli: visual-check --out-dir writes the receipt into that directory, not beside the artifact', () => {
@@ -2611,6 +2640,7 @@ test('cli: failed visual provenance preflight replaces stale evidence with a per
   const evidence = visualEvidencePaths(out);
   fs.writeFileSync(evidence.receipt, '{"sentinel":"stale receipt"}\n');
   fs.writeFileSync(evidence.contactSheet, '<!doctype html><title>stale contact sheet</title>\n');
+  fs.writeFileSync(evidence.contactSheetImage, 'stale contact sheet image');
   for (const screenshot of evidence.screenshots) fs.writeFileSync(screenshot, 'stale screenshot');
 
   const visual = run(['visual-check', out, '--json', '--require-provenance']);
@@ -2623,6 +2653,7 @@ test('cli: failed visual provenance preflight replaces stale evidence with a per
   assert.equal(receipt.artifact.path, path.resolve(out));
   assert.match(receipt.diagnostics[0].code, /^delivery\/provenance-failed$/);
   assert.equal(fs.existsSync(evidence.contactSheet), false);
+  assert.equal(fs.existsSync(evidence.contactSheetImage), false);
   assert.equal(evidence.screenshots.every((file) => !fs.existsSync(file)), true);
   const persisted = JSON.parse(fs.readFileSync(evidence.receipt, 'utf8'));
   assert.equal(persisted.command, 'visual-check');

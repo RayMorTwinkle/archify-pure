@@ -82,6 +82,10 @@ function fakeBrowser({
         viewerChromeActive: !chromeCollision && !stageClearanceFailure,
       };
     },
+    async capturePage({ screenshotPath }) {
+      fs.writeFileSync(screenshotPath, png);
+      return { width: 1600, height: 1200 };
+    },
     async close() {},
   };
 }
@@ -217,6 +221,9 @@ test('visual-check records four containment viewports and four endpoint theme ca
   assert.equal(fs.existsSync(outputs.receipt), true);
   assert.equal(JSON.parse(fs.readFileSync(outputs.receipt, 'utf8')).deliveryReceiptId, 'delivery-receipt-123');
   assert.equal(fs.existsSync(outputs.contactSheet), true);
+  assert.equal(fs.existsSync(outputs.contactSheetImage), true);
+  assert.equal(result.receipt.captures.contactSheetImage, path.basename(outputs.contactSheetImage));
+  assert.deepEqual(result.receipt.captures.contactSheetImageSize, { width: 1600, height: 1200 });
   assert.equal(outputs.screenshots.every((entry) => fs.existsSync(entry.path)), true);
   const contactSheet = fs.readFileSync(outputs.contactSheet, 'utf8');
   assert.match(contactSheet, /Automated browser evidence/);
@@ -237,6 +244,7 @@ test('sidecarPaths places outputs in outDir instead of beside the artifact', () 
   assert.equal(fs.existsSync(separateDir), false, 'calculating paths must not create directories');
   assert.equal(path.dirname(outputs.receipt), separateDir);
   assert.equal(path.dirname(outputs.contactSheet), separateDir);
+  assert.equal(path.dirname(outputs.contactSheetImage), separateDir);
   assert.equal(outputs.screenshots.every((entry) => path.dirname(entry.path) === separateDir), true);
   assert.equal(path.basename(outputs.receipt), 'outdir-source.visual-check.json');
 
@@ -265,11 +273,13 @@ test('visual-check writes all sidecars into --out-dir end-to-end, none beside th
   assert.equal(fs.existsSync(path.join(result.receipt.sidecars.directory, result.receipt.captures.contactSheet)), true);
   assert.equal(fs.existsSync(outputs.receipt), true);
   assert.equal(fs.existsSync(outputs.contactSheet), true);
+  assert.equal(fs.existsSync(outputs.contactSheetImage), true);
   assert.equal(outputs.screenshots.every((entry) => fs.existsSync(entry.path)), true);
 
   const besideArtifact = sidecarPaths(input);
   assert.equal(fs.existsSync(besideArtifact.receipt), false, 'no sidecar should land beside the artifact when outDir is set');
   assert.equal(fs.existsSync(besideArtifact.contactSheet), false);
+  assert.equal(fs.existsSync(besideArtifact.contactSheetImage), false);
 });
 
 test('visual-check returns 1 and preserves evidence when any viewport overflows', async () => {
@@ -356,6 +366,7 @@ test('visual-check refuses changed delivery evidence before launching a browser'
   const outputs = sidecarPaths(input, { outDir });
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outputs.contactSheet, 'old evidence');
+  fs.writeFileSync(outputs.contactSheetImage, png);
   for (const entry of outputs.screenshots) fs.writeFileSync(entry.path, png);
   let launched = false;
   const result = await runVisualCheck({
@@ -375,6 +386,7 @@ test('visual-check refuses changed delivery evidence before launching a browser'
   assert.equal(result.receipt.sidecars.directory, outDir);
   assert.equal(JSON.parse(fs.readFileSync(outputs.receipt)).status, 'fail');
   assert.equal(fs.existsSync(outputs.contactSheet), false);
+  assert.equal(fs.existsSync(outputs.contactSheetImage), false);
   assert.ok(outputs.screenshots.every((entry) => !fs.existsSync(entry.path)));
   assert.equal(fs.existsSync(sidecarPaths(input).receipt), false);
 });
@@ -419,6 +431,7 @@ test('visual-check rechecks delivery evidence after capture and discards screens
   const outputs = sidecarPaths(input);
   assert.equal(JSON.parse(fs.readFileSync(outputs.receipt)).status, 'fail');
   assert.equal(fs.existsSync(outputs.contactSheet), false);
+  assert.equal(fs.existsSync(outputs.contactSheetImage), false);
   assert.ok(outputs.screenshots.every((entry) => !fs.existsSync(entry.path)));
 });
 
@@ -576,6 +589,7 @@ test('visual-check returns 1 and removes misleading capture sidecars on screensh
   const input = artifact('capture-failure.html');
   const outputs = sidecarPaths(input);
   fs.writeFileSync(outputs.contactSheet, 'stale');
+  fs.writeFileSync(outputs.contactSheetImage, png);
   for (const screenshot of outputs.screenshots) fs.writeFileSync(screenshot.path, png);
 
   const result = await runVisualCheck({
@@ -593,6 +607,7 @@ test('visual-check returns 1 and removes misleading capture sidecars on screensh
   assert.equal(result.receipt.diagnostics[0]?.code, 'viewer/visual-check-runtime');
   assert.match(result.receipt.diagnostics[0]?.evidence?.reason || '', /synthetic screenshot failure/);
   assert.equal(fs.existsSync(outputs.contactSheet), false);
+  assert.equal(fs.existsSync(outputs.contactSheetImage), false);
   assert.equal(outputs.screenshots.some((entry) => fs.existsSync(entry.path)), false);
   assert.equal(fs.existsSync(outputs.receipt), true);
 });

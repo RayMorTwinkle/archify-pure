@@ -71,12 +71,14 @@ export function sidecarPaths(artifactPath, { outDir } = {}) {
     base,
     receipt: `${base}.json`,
     contactSheet: `${base}.html`,
+    contactSheetImage: `${base}.contact.png`,
     screenshots,
   };
 }
 
 function cleanupCaptureSidecars(paths) {
   safeUnlink(paths.contactSheet);
+  safeUnlink(paths.contactSheetImage);
   for (const screenshot of paths.screenshots) safeUnlink(screenshot.path);
 }
 
@@ -500,6 +502,51 @@ export class ChromeVisualBrowser {
     return metrics;
   }
 
+  async capturePage({ pagePath, width = 1600, height = 1000, screenshotPath }) {
+    const sessionId = await this.sessionPromise;
+    await this.cdp.send('Emulation.setDeviceMetricsOverride', {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+    const loaded = this.cdp.waitFor('Page.loadEventFired', sessionId);
+    const navigation = await this.cdp.send('Page.navigate', {
+      url: pathToFileURL(pagePath).href,
+    }, sessionId);
+    if (navigation.errorText) throw new Error(`Chrome contact-sheet navigation failed: ${navigation.errorText}`);
+    await loaded;
+    await evaluate(this.cdp, sessionId, `(function () {
+      var fontsReady = document.fonts && document.fonts.ready
+        ? document.fonts.ready.catch(function () {})
+        : Promise.resolve();
+      var imagesReady = Promise.all(Array.from(document.images).map(function (image) {
+        if (image.complete) return Promise.resolve();
+        return new Promise(function (resolve) {
+          image.addEventListener('load', resolve, { once: true });
+          image.addEventListener('error', resolve, { once: true });
+        });
+      }));
+      return Promise.all([fontsReady, imagesReady]);
+    })()`, true);
+    const layout = await this.cdp.send('Page.getLayoutMetrics', {}, sessionId);
+    const content = layout.cssContentSize || layout.contentSize;
+    const captureWidth = Math.max(width, Math.ceil(Number(content?.width) || width));
+    const captureHeight = Math.ceil(Number(content?.height) || height);
+    if (captureWidth > 16384 || captureHeight > 16384) {
+      throw new Error(`The contact sheet is too large to capture (${captureWidth}x${captureHeight}).`);
+    }
+    const capture = await this.cdp.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: true,
+      clip: { x: 0, y: 0, width: captureWidth, height: captureHeight, scale: 1 },
+    }, sessionId, 20000);
+    if (!capture.data) throw new Error('Chrome returned an empty contact-sheet screenshot.');
+    fs.writeFileSync(screenshotPath, Buffer.from(capture.data, 'base64'));
+    return { width: captureWidth, height: captureHeight };
+  }
+
   async close() {
     this.cdp.failAll(new Error('visual-check finished'));
     if (this.child.exitCode === null && this.child.signalCode === null) {
@@ -748,12 +795,13 @@ function baseReceipt({ artifactPath, artifact, outputs, chrome, deliveryProvenan
     },
     readability: { status: 'fail', minimumProjectedNodeTextPx: MIN_PROJECTED_NODE_TEXT_PX, viewports: [] },
     viewerChrome: { status: 'fail', viewports: [] },
-    captures: { status: 'fail', screenshots: [], contactSheet: null },
+    captures: { status: 'fail', screenshots: [], contactSheet: null, contactSheetImage: null },
     sidecars: {
       ...(path.dirname(outputs.receipt) !== path.dirname(artifactPath)
         ? { directory: path.dirname(outputs.receipt) } : {}),
       receipt: path.basename(outputs.receipt),
       contactSheet: path.basename(outputs.contactSheet),
+      contactSheetImage: path.basename(outputs.contactSheetImage),
     },
   };
 }
@@ -772,19 +820,20 @@ export function persistVisualCheckFailure(artifactPath, failure, { outDir } = {}
       policy: 'fit-or-reader-declared-readable-vertical-scroll',
       viewports: [],
     },
-    captures: { status: 'fail', screenshots: [], contactSheet: null },
+    captures: { status: 'fail', screenshots: [], contactSheet: null, contactSheetImage: null },
     sidecars: {
       ...(path.dirname(outputs.receipt) !== path.dirname(path.resolve(artifactPath))
         ? { directory: path.dirname(outputs.receipt) } : {}),
       receipt: path.basename(outputs.receipt),
       contactSheet: path.basename(outputs.contactSheet),
+      contactSheetImage: path.basename(outputs.contactSheetImage),
     },
   };
   const errors = [];
   try { fs.mkdirSync(path.dirname(outputs.receipt), { recursive: true }); } catch (error) {
     errors.push({ file: path.dirname(outputs.receipt), reason: error.message });
   }
-  for (const file of [outputs.receipt, outputs.contactSheet, ...outputs.screenshots.map((entry) => entry.path)]) {
+  for (const file of [outputs.receipt, outputs.contactSheet, outputs.contactSheetImage, ...outputs.screenshots.map((entry) => entry.path)]) {
     try { fs.rmSync(file, { force: true }); } catch (error) { errors.push({ file, reason: error.message }); }
   }
   const reportErrors = () => {
@@ -923,6 +972,7 @@ export async function runVisualCheck({
     receipt.viewerChrome.status = viewerChromePass ? 'pass' : 'fail';
     receipt.captures.status = 'pass';
     receipt.captures.contactSheet = path.basename(outputs.contactSheet);
+    receipt.captures.contactSheetImage = path.basename(outputs.contactSheetImage);
     receipt.status = containmentPass && readabilityPass && viewerChromePass ? 'pass' : 'fail';
     receipt.ok = containmentPass && readabilityPass && viewerChromePass;
     writeAtomic(outputs.contactSheet, contactSheetHtml({
@@ -930,6 +980,10 @@ export async function runVisualCheck({
       receipt,
       screenshots: receipt.captures.screenshots,
     }));
+    receipt.captures.contactSheetImageSize = await browser.capturePage({
+      pagePath: outputs.contactSheet,
+      screenshotPath: outputs.contactSheetImage,
+    });
     persistReceipt(outputs, receipt);
     return { exitCode: receipt.ok ? EXIT.pass : EXIT.fail, receipt };
   } catch (error) {
@@ -942,6 +996,7 @@ export async function runVisualCheck({
     receipt.captures.status = 'fail';
     receipt.captures.screenshots = [];
     receipt.captures.contactSheet = null;
+    receipt.captures.contactSheetImage = null;
     if (error.deliveryProvenance) receipt.provenance = error.deliveryProvenance.status;
     receipt.diagnostics = error.archifyDiagnostics || [failureDiagnostic({
       code: 'viewer/visual-check-runtime',

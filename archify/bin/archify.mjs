@@ -660,6 +660,7 @@ function usage() {
   archify render <type> <input.json> [output.html] [--quality standard|showcase] [--repo-root path]
   archify compare architecture <base.json> <head.json> [output.html] [--receipt path] [--json] [--quality standard|showcase] [--repo-root path]
   archify deliver <type> <input.json> [output.html] [--json] [--open] [--quality standard|showcase] [--repo-root path]
+  archify finalize <type> <input.json> <output.html> [--json] [--receipt path] [--out-dir <dir>] [--quality standard|showcase] [--repo-root path]
   archify preview <type> <input.json> [output.html] [--no-open] [--quality standard|showcase] [--repo-root path]
   archify validate <type> <input.json> [--json] [--layout-json] [--quality standard|showcase] [--repo-root path]
   archify migrate workflow <old.json> <new.json> --to-schema 2 [--json] [--repo-root path]
@@ -2505,7 +2506,125 @@ async function commandVisualCheck(rawArgs) {
     if (result.receipt.captures.contactSheet) {
       console.log(`contact sheet ${path.join(sidecarDirectory, result.receipt.captures.contactSheet)}`);
     }
+    if (result.receipt.captures.contactSheetImage) {
+      console.log(`review image ${path.join(sidecarDirectory, result.receipt.captures.contactSheetImage)}`);
+    }
     if (result.receipt.error) console.error(result.receipt.error);
+  }
+  process.exitCode = result.exitCode;
+}
+
+function extractFinalizeReceiptArgs(args) {
+  const rest = [];
+  let receiptPath;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--receipt') {
+      receiptPath = args[index + 1];
+      if (!receiptPath || receiptPath.startsWith('--')) rejectCliArgument('--receipt requires a JSON output path.', {
+        code: 'cli/missing-option-value',
+        subject: { option: '--receipt' },
+        supportedFixes: ['provide one .json path after --receipt'],
+      });
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--receipt=')) {
+      receiptPath = arg.slice('--receipt='.length);
+      if (!receiptPath) rejectCliArgument('--receipt requires a JSON output path.', {
+        code: 'cli/missing-option-value',
+        subject: { option: '--receipt' },
+        supportedFixes: ['provide one .json path after --receipt'],
+      });
+      continue;
+    }
+    rest.push(arg);
+  }
+  return { rest, receiptPath: receiptPath ? path.resolve(receiptPath) : undefined };
+}
+
+async function commandFinalize(rawArgs) {
+  const qualityArgs = extractQualityArgs(rawArgs);
+  const repoArgs = extractRepoRootArgs(qualityArgs.rest);
+  const outDirArgs = extractOutDirArgs(repoArgs.rest);
+  const receiptArgs = extractFinalizeReceiptArgs(outDirArgs.rest);
+  const json = receiptArgs.rest.includes('--json');
+  const knownOptions = new Set(['--json']);
+  const unknown = receiptArgs.rest.filter((arg) => arg.startsWith('--') && !knownOptions.has(arg));
+  if (unknown.length) rejectCliArgument(`Unknown finalize option "${unknown[0]}".`, {
+    code: 'cli/unknown-option',
+    subject: { option: unknown[0] },
+    supportedFixes: ['remove the unknown option and retry'],
+  });
+  const positional = receiptArgs.rest.filter((arg) => !knownOptions.has(arg));
+  const [type, input, output] = positional;
+  if (!type || !input || !output || positional.length !== 3) rejectCliArgument(usage(), {
+    code: 'cli/usage',
+    supportedFixes: ['use: archify finalize <type> <input.json> <output.html> [options]'],
+  });
+  rendererPath(type);
+  if (!/\.html?$/i.test(output)) rejectCliArgument('finalize requires an .html output path.', {
+    code: 'output/cli-extension',
+    subject: { output: path.resolve(output) },
+    supportedFixes: ['choose an output path ending in .html'],
+  });
+  if (receiptArgs.receiptPath && !/\.json$/i.test(receiptArgs.receiptPath)) {
+    rejectCliArgument('The finalize receipt path must end in .json.', {
+      code: 'output/cli-extension',
+      subject: { receipt: receiptArgs.receiptPath },
+      supportedFixes: ['choose a finalize receipt path ending in .json'],
+    });
+  }
+
+  let runFinalize;
+  try {
+    ({ runFinalize } = await import('./finalize.mjs'));
+  } catch (error) {
+    fail(`Could not load finalize: ${error.message}`, 1);
+  }
+
+  let result;
+  try {
+    result = runFinalize({
+      cliPath: fileURLToPath(import.meta.url),
+      type,
+      input,
+      output,
+      quality: qualityArgs.quality || 'showcase',
+      repoRoot: repoArgs.repoRoot,
+      outDir: outDirArgs.outDir,
+      receiptPath: receiptArgs.receiptPath,
+    });
+  } catch (error) {
+    const failure = {
+      schemaVersion: 1,
+      ok: false,
+      command: 'finalize',
+      status: 'fail',
+      type,
+      quality: qualityArgs.quality || 'showcase',
+      specification: { path: path.resolve(input) },
+      artifact: { path: path.resolve(output) },
+      gates: Object.fromEntries(['validate', 'deliver', 'check', 'visual-check'].map((stage) => [stage, 'not-run'])),
+      diagnostics: [{ code: 'finalize/runtime', severity: 'error', message: error.message }],
+      visualReview: 'pending',
+    };
+    if (json) console.log(JSON.stringify(failure));
+    else console.error(formatDiagnostics('finalize could not start', failure.diagnostics));
+    process.exitCode = 1;
+    return;
+  }
+
+  if (json) {
+    console.log(JSON.stringify(result.summary));
+  } else {
+    console.log(`finalize ${result.summary.status}: ${result.summary.artifact.path}`);
+    console.log(`gates ${Object.entries(result.summary.gates).map(([stage, status]) => `${stage}:${status}`).join(' ')}`);
+    console.log(`receipt ${result.summary.evidence.receipt}`);
+    if (result.summary.evidence.contactSheetImage) {
+      console.log(`review image ${result.summary.evidence.contactSheetImage}`);
+    }
+    console.log('perceptual visual review pending');
   }
   process.exitCode = result.exitCode;
 }
@@ -2557,6 +2676,13 @@ async function commandDoctor(args) {
     label: 'Visual-check runtime',
     ok: fs.existsSync(visualCheckRuntime),
     missing: fs.existsSync(visualCheckRuntime) ? 0 : 1,
+  });
+
+  const finalizeRuntime = path.join(skillRoot, 'bin/finalize.mjs');
+  checks.push({
+    label: 'Finalize runtime',
+    ok: fs.existsSync(finalizeRuntime),
+    missing: fs.existsSync(finalizeRuntime) ? 0 : 1,
   });
 
   const outputPathRuntime = path.join(skillRoot, 'renderers/shared/output-path.mjs');
@@ -3277,6 +3403,9 @@ try {
     case 'deliver':
       await commandDeliver(args);
       break;
+    case 'finalize':
+      await commandFinalize(args);
+      break;
     case 'preview':
       await commandPreview(args);
       break;
@@ -3318,7 +3447,7 @@ try {
   }
 } catch (error) {
   if (!error.archifyArgument) throw error;
-  if (['validate', 'deliver'].includes(command) && args.includes('--json')) {
+  if (['validate', 'deliver', 'finalize'].includes(command) && args.includes('--json')) {
     reportArtifactArgumentFailure(command, error);
   } else {
     fail(error.message);
