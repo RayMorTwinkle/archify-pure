@@ -12,6 +12,10 @@ metadata:
 
 Create a self-contained, interactive HTML diagram from a small typed JSON specification. Static output is the default; enable motion only when the user asks for a demo or presentation.
 
+## Existing candidate handoff
+
+When the user supplies a frozen candidate and asks to validate, deliver, check provenance, and collect browser evidence, run `finalize` first as one CLI invocation. Those gate names describe the required outcomes; they do not request four standalone commands unless the user explicitly says to execute each command separately. If `finalize` passes, inspect its contact-sheet image and stop the CLI path. If it fails and the candidate needs repair, use standalone validation during that repair loop, then rerun `finalize` once.
+
 ## Fast authoring path
 
 Use this bounded path for ordinary generation. Do not read the optional Viewer Runtime reference unless the user asks about those features.

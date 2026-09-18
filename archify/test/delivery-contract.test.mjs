@@ -54,6 +54,9 @@ test('strict provenance check must succeed before visual-check', () => {
 });
 
 test('skill prefers one compact finalizer and one image-reader overview for the passing path', () => {
+  assert.ok(skill.indexOf('## Existing candidate handoff') < skill.indexOf('## Fast authoring path'));
+  assert.match(skill, /run `finalize` first as one CLI invocation/);
+  assert.match(skill, /Those gate names describe the required outcomes; they do not request four standalone commands/);
   assert.match(skill, /archify\.mjs finalize <type> <candidate\.json> <output\.html> --quality showcase --json/);
   assert.match(skill, /stdout is a compact receipt/i);
   assert.match(skill, /When a request names those gates or asks that each pass, do not rerun the individual commands afterward/);
