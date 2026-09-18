@@ -918,6 +918,7 @@ test('packaged skill puts a bounded ordinary-model path before progressive featu
     'Set `meta.quality_profile` to `"showcase"`',
     'A recoverable state uses `type: "failure"` plus a real transition back to the active state',
     'after every candidate edit',
+    'A frozen existing candidate that has not failed a gate goes straight to `finalize`',
     'A passing final validation freezes the candidate: never edit it afterward',
     'A receipt with only 4 artifact checks is basic validation, never showcase acceptance',
     'a showcase pass must report all 9 artifact checks with 0 composition errors and 0 warnings',

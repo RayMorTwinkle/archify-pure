@@ -19,7 +19,7 @@ Use this bounded path for ordinary generation. Do not read the optional Viewer R
 1. Choose `architecture`, `workflow`, `sequence`, `dataflow`, or `lifecycle` from the question.
 2. Read one matching schema in `schemas/`, `schemas/common.schema.json`, and one matching JSON example in `examples/`. Read only those files. Fresh authorship means new stable IDs, domain wording, and layout; use the example for field shape, not facts. New workflow sources use `schema_version: 2` and its readable layout contract; keep `schema_version: 1` only when preserving an existing workflow's fixed geometry. When real product identity matters, query `node bin/archify.mjs brands "<name>" --json`; read `references/brand-marks.md` only for an unknown brand with a user-provided URL.
 3. Artifact first: the next tool action must write the candidate. Write the candidate before inspecting renderer internals. Do not plan exact coordinates in prose. Start with one clear main path, short side branches, and sparse labels. Use roughly 12 primary nodes as an initial readability budget. Preserve every node and relationship required by the user's question; for larger diagrams, group related content where the selected schema supports it. Set `meta.quality_profile` to `"showcase"` unless the user explicitly requests a dense `standard` map. Start with automatic routes and labels. Do not add `via`, `channelX`, `channelY`, or `labelAt` before a diagnostic calls for one; test one repair hypothesis per round. When geometry fails or repeats, read the repair order in `references/authoring-contract.md` and inspect measured layout before manual routing: use `validate <type> <candidate.json> --layout-json` for architecture/workflow; for other types, use validation diagnostics and the rendered SVG geometry. Check whether unnecessary agent-added controls disable automatic port spread; preserve user-required route intent. If several edges share a constrained channel, compare a small node-layout change with adding route controls; validate the coupled change together while preserving required nodes, relationships, labels, and boundary membership.
-4. Use standalone validation after every candidate edit that may need another repair:
+4. Use standalone validation after every candidate edit that may need another repair. A frozen existing candidate that has not failed a gate goes straight to `finalize`; do not pre-validate it only to repeat the same validation inside `finalize`:
 
    ```bash
    node bin/archify.mjs validate <type> <candidate.json> --quality showcase --json
@@ -111,13 +111,7 @@ node bin/archify.mjs finalize <type> <candidate.json> <output.html> --quality sh
 
 After `finalize` passes, inspect the reported `.visual-check.contact.png` once with a capable image reader. Check both endpoint themes, the default READ view, crossings/corridors, label masks, node/card fit, focus/search/passport closure, and export cleanliness. Open an individual viewport PNG only when the contact sheet shows a possible defect that needs closer inspection. Record perceptual review separately from the automated result.
 
-The individual commands remain available for recovery and focused debugging. Keep their order strict: after `deliver` exits zero, require current delivery evidence with `check`; run `visual-check` only after that strict check exits zero:
-
-```bash
-node bin/archify.mjs deliver <type> <candidate.json> <output.html> --quality showcase --json
-node bin/archify.mjs check <output.html> --require-provenance
-node bin/archify.mjs visual-check <output.html> --json --require-provenance
-```
+The individual commands remain available for recovery and focused debugging. Their order stays `deliver` → strict provenance `check` → `visual-check`; read `references/delivery-contract.md` for the exact standalone syntax only when that recovery path is needed.
 
 Read `references/delivery-contract.md` whenever `finalize`, `deliver`, strict `check`, or `visual-check` fails; provenance is not current; recovery metadata remains; or the same output path needs another delivery. That file is the canonical source for provenance, serialization, recovery, receipt, and browser-evidence rules.
 

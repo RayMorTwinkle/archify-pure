@@ -29,12 +29,6 @@ test('skill keeps deterministic delivery, automated browser evidence, and percep
 test('strict provenance check must succeed before visual-check', () => {
   const workflows = [
     {
-      name: 'SKILL.md',
-      section: skill.match(/The individual commands remain available for recovery and focused debugging\.[\s\S]*?node bin\/archify\.mjs visual-check <output\.html> --json --require-provenance/)?.[0] ?? '',
-      check: 'node bin/archify.mjs check <output.html> --require-provenance',
-      visualCheck: 'node bin/archify.mjs visual-check <output.html> --json --require-provenance',
-    },
-    {
       name: 'delivery contract',
       section: delivery.match(/Run strict `check` after `deliver` exits zero\.[\s\S]*?before collecting new\s+visual evidence\./)?.[0] ?? '',
       check: 'strict `check`',
@@ -54,12 +48,17 @@ test('strict provenance check must succeed before visual-check', () => {
       `${name}: visual-check requires a successful strict check`,
     );
   }
+
+  assert.match(skill, /Their order stays `deliver` → strict provenance `check` → `visual-check`/);
+  assert.match(skill, /read `references\/delivery-contract\.md` for the exact standalone syntax only when that recovery path is needed/);
 });
 
 test('skill prefers one compact finalizer and one image-reader overview for the passing path', () => {
   assert.match(skill, /archify\.mjs finalize <type> <candidate\.json> <output\.html> --quality showcase --json/);
   assert.match(skill, /stdout is a compact receipt/i);
   assert.match(skill, /When a request names those gates or asks that each pass, do not rerun the individual commands afterward/);
+  assert.match(skill, /A frozen existing candidate that has not failed a gate goes straight to `finalize`; do not pre-validate it/);
+  assert.doesNotMatch(skill, /node bin\/archify\.mjs deliver <type> <candidate\.json> <output\.html>/);
   assert.match(skill, /\.visual-check\.contact\.png/);
   assert.match(skill, /Open an individual viewport PNG only when the contact sheet shows a possible defect/i);
   assert.match(delivery, /stops at the first failed or skipped stage/i);
