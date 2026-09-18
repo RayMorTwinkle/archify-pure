@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Archify 运行原理（archify-pure）",
+    "subtitle": "Agent 写小契约，renderer 定几何真相，两道独立门禁产出单个自包含 HTML",
+    "output": "examples/archify-pure-self.html",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "visual_preset": "blueprint",
+    "views": [
+      {
+        "id": "main-line",
+        "label": "主链路：契约到成品",
+        "focus": ["ir", "schema", "render", "comp", "html"],
+        "note": "每一步只交接一次，失败就地返回结构化回执"
+      },
+      {
+        "id": "repair-loop",
+        "label": "修复回路",
+        "focus": ["render", "diag", "agent"],
+        "note": "回执点名 subject 与 supportedFixes，Agent 不得整图重写"
+      },
+      {
+        "id": "gate-side",
+        "label": "本机零网络门禁",
+        "focus": ["schema", "render", "comp", "viewer", "html"],
+        "note": "validator 预编译随包分发，运行期不装依赖也不联网"
+      },
+      {
+        "id": "handoff",
+        "label": "原子交付",
+        "focus": ["comp", "html", "deliver"],
+        "note": "只有全绿的候选才替换目标文件"
+      }
+    ],
+    "legend": {
+      "mode": "auto"
+    }
+  },
+  "components": [
+    {
+      "id": "ask",
+      "type": "external",
+      "label": "需求输入",
+      "sublabel": "自然语言 / Mermaid",
+      "pos": [40, 300],
+      "size": [150, 68]
+    },
+    {
+      "id": "agent",
+      "type": "frontend",
+      "label": "Agent + SKILL.md",
+      "sublabel": "只做布局判断",
+      "pos": [250, 300],
+      "size": [170, 68],
+      "tag": "不自动布局"
+    },
+    {
+      "id": "ir",
+      "type": "messagebus",
+      "label": "Typed JSON IR",
+      "sublabel": "稳定 ID + 严格字段",
+      "pos": [480, 300],
+      "size": [160, 68]
+    },
+    {
+      "id": "schema",
+      "type": "security",
+      "label": "形状门禁",
+      "sublabel": "ajv 预编译 validator",
+      "pos": [480, 96],
+      "size": [170, 68],
+      "tag": "零安装"
+    },
+    {
+      "id": "render",
+      "type": "backend",
+      "label": "5 个 typed renderer",
+      "sublabel": "几何 / text-fit / 图例",
+      "pos": [710, 300],
+      "size": [170, 68]
+    },
+    {
+      "id": "comp",
+      "type": "security",
+      "label": "9 项 artifact 检查",
+      "sublabel": "showcase 门禁",
+      "pos": [700, 96],
+      "size": [190, 68],
+      "tag": "0 error / 0 warning"
+    },
+    {
+      "id": "viewer",
+      "type": "backend",
+      "label": "viewer/*.js → 模板",
+      "sublabel": "generate-viewer --check",
+      "pos": [940, 96],
+      "size": [210, 68]
+    },
+    {
+      "id": "html",
+      "type": "frontend",
+      "label": "单文件 HTML",
+      "sublabel": "自包含 · 零外链",
+      "pos": [950, 300],
+      "size": [190, 68]
+    },
+    {
+      "id": "diag",
+      "type": "messagebus",
+      "label": "修复回执 JSON",
+      "sublabel": "subject + evidence",
+      "pos": [470, 504],
+      "size": [180, 68]
+    },
+    {
+      "id": "deliver",
+      "type": "cloud",
+      "label": "deliver 原子替换",
+      "sublabel": "失败保留 last-good",
+      "pos": [700, 504],
+      "size": [190, 68]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "本机确定性编译",
+      "wraps": ["schema", "comp", "viewer", "ir", "render", "html"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "c-ask-agent",
+      "from": "ask",
+      "to": "agent",
+      "variant": "emphasis"
+    },
+    {
+      "id": "c-agent-ir",
+      "from": "agent",
+      "to": "ir",
+      "label": "写小契约",
+      "variant": "emphasis"
+    },
+    {
+      "id": "c-ir-schema",
+      "from": "ir",
+      "to": "schema",
+      "label": "校验",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "c-schema-render",
+      "from": "schema",
+      "to": "render",
+      "label": "通过",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "c-render-comp",
+      "from": "render",
+      "to": "comp",
+      "label": "量几何",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "c-comp-html",
+      "from": "comp",
+      "to": "html",
+      "label": "全绿",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "c-viewer-html",
+      "from": "viewer",
+      "to": "html",
+      "label": "内联交互",
+      "labelAt": [1052, 178],
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c-render-diag",
+      "from": "render",
+      "to": "diag",
+      "label": "不通过",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c-diag-agent",
+      "from": "diag",
+      "to": "agent",
+      "label": "只改 supportedFixes",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "bottom"
+    },
+    {
+      "id": "c-html-deliver",
+      "from": "html",
+      "to": "deliver",
+      "label": "才落盘",
+      "fromSide": "bottom",
+      "toSide": "right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "两道独立门禁",
+      "items": [
+        "schema 管形状：未知字段即拒",
+        "renderer 管几何：实测交叉净空"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "失败带回执",
+      "items": [
+        "稳定规则码 + 精确 subject",
+        "只改 supportedFixes，两轮为止"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "本机零网络",
+      "items": [
+        "validator 预编译，字体内嵌",
+        "成品零外链，无更新检查请求"
+      ]
+    }
+  ]
+}
