@@ -12,8 +12,6 @@ const REQUIRED_INPUTS = new Set([
   'archify/LICENSE',
   'archify/THIRD_PARTY_NOTICES.md',
   'archify/renderers/shared/generated-validators.mjs',
-  'archify/scripts/check-update.mjs',
-  'archify/scripts/update-contract.mjs',
   'archify/skill-release.json',
 ]);
 const EXCLUDED_FILES = new Set([

@@ -317,7 +317,7 @@ function buildGif(ffmpeg, framesRoot) {
 async function main() {
   for (const scene of scenes) {
     const artifact = path.join(repoRoot, scene.artifact);
-    if (!fs.existsSync(artifact)) throw new Error(`${scene.id}: missing ${scene.artifact}; run node scripts/build-gallery.mjs`);
+    if (!fs.existsSync(artifact)) throw new Error(`${scene.id}: missing ${scene.artifact}; run node scripts/build-gallery.mjs ../docs`);
   }
   const chromePath = findChrome();
   if (!chromePath) throw new Error('Chrome or Chromium is required. Set ARCHIFY_CHROME to its executable path.');

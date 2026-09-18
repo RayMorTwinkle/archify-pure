@@ -4,18 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  compareSemver,
-  isStableCoreVersion,
-  parseSemver,
-  validateLocalRelease,
-  validateStableUpdateManifest,
-} from '../archify/scripts/update-contract.mjs';
-
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rootFlag = process.argv.indexOf('--root');
 const repoRoot = rootFlag === -1 ? scriptRoot : path.resolve(process.argv[rootFlag + 1] || '');
 const failures = [];
+
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
 function fail(message) {
   failures.push(message);
@@ -41,124 +35,86 @@ function readJson(relativePath) {
   }
 }
 
+export function parseSemver(value) {
+  if (typeof value !== 'string' || value.length > 128) {
+    throw new Error(`invalid SemVer: ${JSON.stringify(value)}`);
+  }
+  const match = SEMVER.exec(value);
+  if (!match) throw new Error(`invalid SemVer: ${JSON.stringify(value)}`);
+  const prerelease = match[4]?.split('.') ?? null;
+  if (prerelease?.some((identifier) => /^\d+$/.test(identifier)
+    && identifier.length > 1 && identifier.startsWith('0'))) {
+    throw new Error(`invalid SemVer: ${JSON.stringify(value)}`);
+  }
+  return {
+    core: match.slice(1, 4),
+    prerelease,
+    build: match[5]?.split('.') ?? null,
+  };
+}
+
+function compareNumericIdentifiers(left, right) {
+  if (left.length !== right.length) return left.length < right.length ? -1 : 1;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function comparePrerelease(left, right) {
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    if (left[index] === undefined) return -1;
+    if (right[index] === undefined) return 1;
+    if (left[index] === right[index]) continue;
+    const leftNumeric = /^\d+$/.test(left[index]);
+    const rightNumeric = /^\d+$/.test(right[index]);
+    if (leftNumeric && rightNumeric) return compareNumericIdentifiers(left[index], right[index]);
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+    return left[index] < right[index] ? -1 : 1;
+  }
+  return 0;
+}
+
+export function compareSemver(leftValue, rightValue) {
+  const left = parseSemver(leftValue);
+  const right = parseSemver(rightValue);
+  for (let index = 0; index < left.core.length; index += 1) {
+    const comparison = compareNumericIdentifiers(left.core[index], right.core[index]);
+    if (comparison !== 0) return comparison;
+  }
+  return comparePrerelease(left.prerelease, right.prerelease);
+}
+
+export function isStableCoreVersion(value) {
+  try {
+    const parsed = parseSemver(value);
+    return parsed.prerelease === null && parsed.build === null;
+  } catch {
+    return false;
+  }
+}
+
 function checkSkillRelease(value, version, isDevelopment) {
   const expectedChannel = isDevelopment ? 'development' : 'stable';
-  try {
-    const release = validateLocalRelease(value);
-    if (release.version === version && release.channel === expectedChannel) return;
-  } catch {
-    // Report the repository-specific cross-artifact requirement below.
+  const valid = value?.schemaVersion === 1
+    && value?.skillId === 'archify'
+    && value?.channel === expectedChannel
+    && value?.version === version;
+  if (!valid) {
+    fail(`archify/skill-release.json must identify archify ${version} as ${expectedChannel}.`);
   }
-  fail(`archify/skill-release.json must identify archify ${version} as ${expectedChannel}, use the official repository, and pin the trusted update manifest URL.`);
-}
-
-function checkStableUpdateManifest(value, expectedVersion, previousVersion, packageVersion, isDevelopment) {
-  try {
-    const manifest = validateStableUpdateManifest(value);
-    const allowedVersions = isDevelopment
-      ? [expectedVersion]
-      : [expectedVersion, previousVersion].filter(Boolean);
-    if (expectedVersion && allowedVersions.includes(manifest.version)
-      && (isDevelopment || packageVersion === expectedVersion)) return;
-  } catch {
-    // Report the repository-specific cross-artifact requirement below.
-  }
-  const releaseWindow = !isDevelopment && previousVersion
-    ? `newest stable v${expectedVersion} or immediate prior v${previousVersion} during the enforced post-Release publication window`
-    : `newest published stable v${expectedVersion || '(missing)'}`;
-  fail(`docs/skill-updates/archify/stable.json must describe the ${releaseWindow} with the fixed repository, immutable tree/archive digests, and official release-notes URL.`);
-}
-
-function shieldEscape(value) {
-  return value.replaceAll('_', '__').replaceAll('-', '--');
-}
-
-function versionLabels(source) {
-  return [...source.matchAll(/\bv(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)\b/g)]
-    .map((match) => match[1]);
 }
 
 function checkReadme(relativePath, source, version, language, isDevelopment) {
-  const badge = `/badge/version-${shieldEscape(version)}-`;
   const markerLabel = language === 'zh'
     ? isDevelopment ? '当前开发版本：' : '当前稳定版本：'
     : isDevelopment ? 'Current development version:' : 'Current stable version:';
   const identity = isDevelopment ? 'development' : 'stable';
   const hasMarker = source.split('\n').some((line) => line.includes(markerLabel) && line.includes(`\`v${version}\``));
-  if (!source.includes(badge) || !hasMarker) {
-    fail(`${relativePath} must advertise ${identity} identity v${version} with an exact escaped badge and explicit ${identity} marker.`);
-  }
-}
-
-function checkDocument(relativePath, source, version, isDevelopment) {
-  const labels = versionLabels(source);
-  const identity = isDevelopment ? 'development' : 'stable';
-  const englishLabel = isDevelopment ? /development/i : /stable/i;
-  const chineseLabel = isDevelopment ? /开发版/ : /稳定版/;
-  if (labels.length === 0 || labels.some((label) => label !== version)
-    || !englishLabel.test(source) || !chineseLabel.test(source)) {
-    fail(`${relativePath} must advertise ${identity} identity v${version} in both languages without a conflicting version alias.`);
-  }
-}
-
-function checkRavenBoundary(relativePath, source, language) {
-  const installParent = String.raw`~\/\.raven\/workspace\/skills`;
-  const installedRoot = `${installParent}\/archify`;
-  const pathBoundary = String.raw`(?=$|[\s\x60'"<>,.;:，；。])`;
-  const hasEnglishManual = /manual ZIP/i.test(source);
-  const hasChineseManual = /(?:手动[^\n<]{0,40}ZIP|ZIP[^\n<]{0,40}手动)/i.test(source);
-  const hasRequiredCopy = language === 'both'
-    ? hasEnglishManual && hasChineseManual
-    : language === 'zh' ? hasChineseManual : hasEnglishManual;
-  const englishExtractsIntoParent = new RegExp(
-    String.raw`(?:extract|unpack)[^\n]{0,180}archify\.zip[^\n]{0,180}(?:into|to)\s*[\x60'"<]*${installParent}${pathBoundary}`,
-    'i',
-  ).test(source);
-  const englishExplainsInstalledRoot = new RegExp(
-    String.raw`(?:yields?|creates?|produces?|results? in)[^\n]{0,120}${installedRoot}`,
-    'i',
-  ).test(source);
-  const chineseExtractsIntoParent = new RegExp(
-    String.raw`archify\.zip[^\n]{0,100}解压(?:到|至)\s*[\x60'"<]*${installParent}${pathBoundary}`,
-    'i',
-  ).test(source);
-  const chineseExplainsInstalledRoot = new RegExp(
-    String.raw`(?:得到|生成|产生|最终位于)[^\n]{0,120}${installedRoot}`,
-    'i',
-  ).test(source);
-  const hasCorrectDestination = language === 'both'
-    ? englishExtractsIntoParent && englishExplainsInstalledRoot
-      && chineseExtractsIntoParent && chineseExplainsInstalledRoot
-    : language === 'zh'
-      ? chineseExtractsIntoParent && chineseExplainsInstalledRoot
-      : englishExtractsIntoParent && englishExplainsInstalledRoot;
-  const nestedDestination = new RegExp(
-    String.raw`(?:\b(?:extract|unpack)[^\n]{0,220}(?:into|to)|解压(?:到|至))\s*[\x60'"<]*${installedRoot}`,
-    'i',
-  ).test(source);
-  const inventsSwitcher = /data-agent=["']raven["']/i.test(source)
-    || /--agent\s+raven\b/i.test(source)
-    || /[?&]agent=raven\b/i.test(source);
-  if (!/Raven/i.test(source) || !hasRequiredCopy || !hasCorrectDestination
-    || nestedDestination || inventsSwitcher) {
-    fail(`${relativePath}: Raven must remain a manual ZIP installation outside the agent switcher: extract archify.zip into ~/.raven/workspace/skills, yielding ~/.raven/workspace/skills/archify.`);
-  }
-}
-
-function checkIdentityTemplate(relativePath, source, isDevelopment) {
-  const hasHardcodedVersion = /\b\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\b/.test(source);
-  const identity = isDevelopment ? 'development and 开发版' : 'stable and 稳定版';
-  const hasIdentity = isDevelopment
-    ? /development/i.test(source) && /开发版/.test(source)
-    : /stable/i.test(source) && /稳定版/.test(source);
-  if (!source.includes('[[ARCHIFY_VERSION]]') || !hasIdentity || hasHardcodedVersion) {
-    fail(`${relativePath} must use [[ARCHIFY_VERSION]] with ${identity} labels, never a hardcoded package version.`);
-  }
-  const versionLines = source.split('\n').filter(line => line.includes('[[ARCHIFY_VERSION]]'));
-  const staleIdentity = isDevelopment ? /\bstable\b|稳定版/i : /\bdevelopment\b|开发版/i;
-  if (versionLines.some(line => staleIdentity.test(line))) {
-    const staleLabel = isDevelopment ? 'stable or 稳定版' : 'development or 开发版';
-    fail(`${relativePath} must not label [[ARCHIFY_VERSION]] as ${staleLabel}.`);
+  if (!hasMarker) {
+    fail(`${relativePath} must advertise ${identity} identity v${version} with an explicit ${identity} marker.`);
   }
 }
 
@@ -202,7 +158,6 @@ const stableLabels = publishedLabels
   .filter(isStableCoreVersion)
   .sort((left, right) => compareSemver(right, left));
 const newestStableLabel = stableLabels[0] ?? null;
-const previousStableLabel = stableLabels[1] ?? null;
 
 if (!hasSupportedVersion) {
   fail(`package version is not a supported SemVer identity: ${JSON.stringify(version)}`);
@@ -219,13 +174,6 @@ if (hasSupportedVersion && hasRealUnreleasedChanges) {
 
 if (hasSupportedVersion) {
   checkSkillRelease(readJson('archify/skill-release.json'), version, isDevelopment);
-  checkStableUpdateManifest(
-    readJson('docs/skill-updates/archify/stable.json'),
-    newestStableLabel,
-    previousStableLabel,
-    version,
-    isDevelopment,
-  );
 
   const lock = readJson('archify/package-lock.json');
   if (lock.version !== version || lock.packages?.['']?.version !== version) {
@@ -252,40 +200,9 @@ if (hasSupportedVersion) {
   checkReadme('README.md', english, version, 'en', isDevelopment);
   checkReadme('README_EN.md', englishMirror, version, 'en', isDevelopment);
   checkReadme('README_ZH.md', chinese, version, 'zh', isDevelopment);
-  checkRavenBoundary('README.md', english, 'en');
-  checkRavenBoundary('README_EN.md', englishMirror, 'en');
-  checkRavenBoundary('README_ZH.md', chinese, 'zh');
   if (english !== englishMirror) fail('README_EN.md must remain byte-identical to README.md.');
 
-  if (newestStableLabel && isDevelopment) {
-    const stableMinor = newestStableLabel.split('.').slice(0, 2).join('\\.');
-    if (new RegExp(`Archify ${stableMinor} includes\\b`).test(english)
-      || new RegExp(`Archify ${stableMinor} 已覆盖`).test(chinese)) {
-      fail(`README capability summary must describe v${version} as development, not published ${newestStableLabel}.`);
-    }
-  }
-
-  const landing = read('docs/index.html');
-  checkDocument('docs/index.html', landing, version, isDevelopment);
-  checkRavenBoundary('docs/index.html', landing, 'both');
-  const proofCounts = [...landing.matchAll(/\b\d+\/\d+\b/g)].map((match) => match[0]);
-  const staleProofCounts = [...new Set(proofCounts.filter((count) => count !== '9/9'))];
-  if (proofCounts.length === 0 || staleProofCounts.length > 0) {
-    const found = staleProofCounts.length > 0 ? `; found ${staleProofCounts.join(', ')}` : '';
-    fail(`docs/index.html proof receipt must say 9/9 everywhere; every N/N proof receipt must be exactly 9/9${found}.`);
-  }
-  const start = read('docs/start.html');
-  checkDocument('docs/start.html', start, version, isDevelopment);
-  checkRavenBoundary('docs/start.html', start, 'both');
   checkRoadmap('ROADMAP.md', read('ROADMAP.md'), version, isDevelopment);
-
-  for (const templatePath of [
-    'scripts/start-template.html',
-    'scripts/guide-template.html',
-    'scripts/gallery-template.html',
-  ]) {
-    checkIdentityTemplate(templatePath, read(templatePath), isDevelopment);
-  }
 
   const changelogMarker = `Development identity: \`v${version}\``;
   if (hasRealUnreleasedChanges && !unreleased.includes(changelogMarker)) {

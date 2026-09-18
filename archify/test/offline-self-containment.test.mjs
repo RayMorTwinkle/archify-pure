@@ -78,3 +78,19 @@ test('every checked-in viewer artifact carries its font and reaches no external 
   }
   for (const relative of artifacts) assertOfflineArtifact(fs.readFileSync(path.join(repoRoot, relative), 'utf8'), relative);
 });
+
+test('no checked-in HTML file reaches an external origin at all', () => {
+  const tracked = spawnSync('git', ['ls-files', '-z', '*.html'], { cwd: repoRoot, encoding: 'utf8' });
+  assert.equal(tracked.status, 0, tracked.stderr);
+  const documents = tracked.stdout.split('\0').filter(Boolean);
+  assert.ok(documents.length >= 40, 'expected the checked-in HTML corpus to be swept');
+
+  const external = /(?:src|href|data-src|xlink:href)\s*=\s*["'](?:https?:)?\/\/(?!127\.0\.0\.1|localhost|www\.w3\.org|[^"']*\.w3\.org)/i;
+  for (const relative of documents) {
+    const offenders = fs.readFileSync(path.join(repoRoot, relative), 'utf8')
+      .split('\n')
+      .map((line, index) => [index + 1, line])
+      .filter(([, line]) => external.test(line));
+    assert.deepEqual(offenders, [], `${relative} loads an external resource`);
+  }
+});

@@ -5,8 +5,6 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { copySiteAssets } from './copy-site-assets.mjs';
-import { DIAGRAM_TYPE_LABELS, diagramTypeCopyReplacements } from './site-copy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -14,7 +12,6 @@ const skillRoot = path.join(repoRoot, 'archify');
 const outputRoot = path.resolve(process.argv[2] || path.join(repoRoot, 'docs'));
 const artifactsRoot = path.join(outputRoot, 'gallery', 'artifacts');
 const sourcesRoot = path.join(outputRoot, 'gallery', 'sources');
-const templatePath = path.join(__dirname, 'gallery-template.html');
 const packageJson = JSON.parse(fs.readFileSync(path.join(skillRoot, 'package.json'), 'utf8'));
 
 const CASES = [
@@ -195,50 +192,6 @@ function formatBytes(bytes) {
   return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`;
 }
 
-function renderCard(entry, index) {
-  const classes = `showcase-card${entry.featured ? ' is-featured' : ''}`;
-  const mode = entry.animation === 'trace' ? `${entry.visualPreset} + trace` : entry.visualPreset;
-  const artifact = `gallery/artifacts/${entry.output}`;
-  const source = `gallery/sources/${entry.input}`;
-  const focusedArtifact = entry.view
-    ? `${artifact}?present=1&play=1#view=${encodeURIComponent(entry.view)}`
-    : `${artifact}#focus=${encodeURIComponent(entry.focus)}`;
-  const exploreEn = entry.view ? 'Play named chapter ↗' : 'Explore focus ↗';
-  const exploreZh = entry.view ? '播放命名章节 ↗' : '探索聚焦路径 ↗';
-  const engineeringProof = entry.engineeringProfile
-    ? `\n              <div class="engineering-proof" aria-label="Engineering profile validation"><span>Engineering profile</span><strong>${esc(entry.engineeringProfile.replaceAll('-', ' ').toUpperCase())} · PASS</strong></div>`
-    : '';
-  return `          <article class="${classes}" id="proof-${esc(entry.id)}" data-proof-id="${esc(entry.id)}" data-type="${esc(entry.type)}" style="--accent:${esc(TYPE_ACCENTS[entry.type] || entry.accent)}">
-            <header class="card-header">
-              <div class="card-index">${String(index + 1).padStart(2, '0')}</div>
-              <div class="card-title-wrap">
-                <div class="card-kicker">${esc(DIAGRAM_TYPE_LABELS.en[entry.type])} / ${entry.nodeCount} nodes${entry.viewCount ? ` / ${entry.viewCount} views · play` : ''}</div>
-                <h3 class="card-title" data-en="${esc(entry.titleEn)}" data-zh="${esc(entry.titleZh)}">${esc(entry.titleEn)}</h3>
-              </div>
-              <div class="card-mode">${esc(mode)}</div>
-            </header>
-            <div class="preview-shell">
-              <div class="live-flag">Live artifact</div>
-              <iframe src="${esc(artifact)}?embed=1&amp;theme=dark" data-src-base="${esc(artifact)}" title="${esc(entry.titleEn)} live Archify preview" loading="${entry.featured ? 'eager' : 'lazy'}"></iframe>
-            </div>
-            <div class="card-body">
-              <p class="card-description" data-en="${esc(entry.descriptionEn)}" data-zh="${esc(entry.descriptionZh)}">${esc(entry.descriptionEn)}</p>${engineeringProof}
-              <div class="receipt" aria-label="Validation receipt">
-                <div class="receipt-cell"><span class="receipt-label">Artifact</span><span class="receipt-value ok">${entry.checksPassed}/${entry.checkCount} pass</span></div>
-                <div class="receipt-cell"><span class="receipt-label">Composition</span><span class="receipt-value ${entry.composition.status === 'pass' ? 'ok' : ''}" title="${entry.composition.metrics.properCrossings} crossings · ${entry.composition.metrics.containerBorderRuns} border runs · ${entry.composition.metrics.microSegmentCount} micro segments · ${entry.composition.metrics.shortInteriorSegmentCount} cramped turns">${esc(entry.composition.profile.toUpperCase())} · ${esc(entry.composition.status.toUpperCase())}</span></div>
-                <div class="receipt-cell"><span class="receipt-label">Graph</span><span class="receipt-value">${entry.nodeCount}N · ${entry.edgeCount}E</span></div>
-                <div class="receipt-cell"><span class="receipt-label">SHA-256</span><span class="receipt-value" title="${esc(entry.artifactSha256)}">${esc(entry.artifactSha256.slice(0, 12))}</span></div>
-              </div>
-              <div class="card-actions">
-                <a class="card-link primary" href="${esc(focusedArtifact)}" target="_blank" rel="noopener" data-en="${esc(exploreEn)}" data-zh="${esc(exploreZh)}">${esc(exploreEn)}</a>
-                <a class="card-link" href="${esc(artifact)}" target="_blank" rel="noopener" data-en="Full artifact" data-zh="完整成品">Full artifact</a>
-                <a class="card-link" href="${esc(source)}" target="_blank" rel="noopener">JSON IR</a>
-                <a class="card-link create-link" href="start.html?type=${esc(entry.type)}&amp;source=gallery" data-en="Create this type" data-zh="按此类型开始">Create this type</a>
-              </div>
-            </div>
-          </article>`;
-}
-
 fs.rmSync(artifactsRoot, { recursive: true, force: true });
 fs.rmSync(sourcesRoot, { recursive: true, force: true });
 fs.mkdirSync(artifactsRoot, { recursive: true });
@@ -327,25 +280,5 @@ const manifest = {
 const manifestJson = JSON.stringify(manifest, null, 2);
 fs.writeFileSync(path.join(outputRoot, 'gallery', 'manifest.json'), `${manifestJson}\n`);
 
-const replacements = {
-  ...diagramTypeCopyReplacements(),
-  '[[ARCHIFY_VERSION]]': packageJson.version,
-  '[[ENTRY_COUNT]]': String(manifest.entryCount),
-  '[[CHECK_COUNT]]': String(manifest.checkCount),
-  '[[GALLERY_CARDS]]': entries.map(renderCard).join('\n'),
-  '[[MANIFEST_JSON]]': manifestJson.replace(/<\/script/gi, '<\\/script'),
-};
-
-let html = fs.readFileSync(templatePath, 'utf8');
-for (const [placeholder, value] of Object.entries(replacements)) {
-  html = html.split(placeholder).join(value);
-}
-if (/\[\[[A-Z0-9_]+\]\]/.test(html)) {
-  throw new Error('Gallery template contains unresolved placeholders');
-}
-const galleryPath = path.join(outputRoot, 'gallery.html');
-copySiteAssets(galleryPath);
-fs.writeFileSync(galleryPath, html);
-
 console.log(`gallery ${manifest.entryCount} artifacts / ${manifest.checkCount} checks`);
-console.log(path.join(outputRoot, 'gallery.html'));
+console.log(path.join(outputRoot, 'gallery', 'manifest.json'));
